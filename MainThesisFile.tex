@@ -103,9 +103,9 @@
 % Declarations for Front Matter
 
 \title{Title of Thesis is here}
-\author{First-name Lastname}
+\author{George Dill}
 \pdegrees{}
-\degree{Doctor of Philosophy in Computer Science}
+\degree{Master of Science in Computer Science}
 \committee{Prof. Firstname1 Lastname1, Chair and Advisor \\ Prof. Firstname2 Lastname2  \\ Prof. Firstname3 Lastname3 \\ Prof. Firstname4 Lastname4 \\ Prof. Firstname5 Lastname5}
 \maketitle
 
@@ -132,6 +132,9 @@
 % \preface
 % This preface is purely optional at UIC.
 
+\preface
+
+
 \tableofcontents
 \listoftables
 \listoffigures
@@ -144,7 +147,9 @@
     \setlength{\labelsep}{.5in}
     \setlength{\rightmargin}{\leftmargin}}
 \item[AMS\hfill] American Mathematical Society
+\item[CPU\hfill] Central Processing Unit
 \item[CTAN\hfill] Comprehensive \TeX\ Archive Network
+\item[NUMA\hfill] Non Uniform Memory Access
 \item[TUG\hfill] \TeX\ Users Group
 \item[UIC\hfill] University of Illinois at Chicago
 \item[UICTHESI\hfill] Thesis formatting system for use at UIC.
@@ -154,6 +159,38 @@
 Put your summary of thesis here.
 
 \chapter{Introduction}
+% Find some statistics about how much hardware has multiprocessing
+% capability
+
+
+\section{Hardware}
+A thread is a sequence of machine instructions running on a single central processing unit, or core. 
+A core, or central processing unit, is the hardware responsible for executing instructions. 
+A processor is a collection of cores, on the same physical unit, which may share resources.  
+Non Uniform Memory Access (NUMA) describes a hardware organization scheme in a multi-processor system where a processor, or NUMA Node, has priority access to a portion of main memory. The result is reduced memory access latency for the portion of main memory local to the NUMA Node and increased memory latency for the remote portion of main memory. 
+
+% Machine Organization Sockets - Cores - Threads
+% NUMA
+% What is the memory hierarchy
+% Cache organization schemes
+
+
+\section{Schemes for Shared Memory Access}
+% Locking
+% Atomic Operations
+% Transactional Memory
+
+\section{Delegation}
+% A history of what has been done to date. FFWD, Gepard
+
+\chapter{Asynchronous Delegation}
+% Why is it different from FFWD
+% Results on microbenchmarks
+
+\chapter{Rates and System Performance}
+% Quantifying the client - server relationship
+% 
+
 
 This is how we cite a paper \cite{Farine20162243}.
 
