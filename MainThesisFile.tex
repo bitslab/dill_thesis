@@ -164,20 +164,32 @@ Put your summary of thesis here.
 
 
 \section{Hardware}
-A thread is a sequence of machine instructions running on a single central processing unit, or core. 
-A core, or central processing unit, is the hardware responsible for executing instructions. 
-A processor is a collection of cores, on the same physical unit, which may share resources.  
-Non Uniform Memory Access (NUMA) describes a hardware organization scheme in a multi-processor system where a processor, or NUMA Node, has priority access to a portion of main memory. The result is reduced memory access latency for the portion of main memory local to the NUMA Node and increased memory latency for the remote portion of main memory. 
+Under consideration is our highly parallel machine consisting of multiple processing units, or cores, sharing resources on a single silicon processor. Cores execute threads, or sequences of machine instructions. X86 machines often support the simultaneous execution of two threads at the same time. In this hyperthreaded scenario a core's resources are shared between the threads in execution. 
 
-% Machine Organization Sockets - Cores - Threads
-% NUMA
-% What is the memory hierarchy
-% Cache organization schemes
+Processors are installed in sockets on the machine's motherboard. The processors on separate sockets communicate with each other through a bus. On a machine supporting Non Uniform Memory Access (NUMA) each socket is also a NUMA Node, with direct access to a portion of main memory (DRAM). Cores on a socket will experience greater latency accessing memory addresses on a remote NUMA node than memory addresses resident on their local NUMA node because of the time required for the data to travel across the bus. 
 
+Access to main memory is a bottleneck for modern processors, which can perform an operation in as little as 1 cycle but write to memory in the order of LOOK THIS UP. To close this latency gap processors and cores have levels of cache, small amounts of high speed memory located closer to the processing unit. Cache is typically allocated in three levels, with levels 1 and 2 dedicated to a single core, while level 3 is shared among all cores on a processor. The latency of access to levels 1, 2, and 3 is around 5, 15, 60 cycles respectively. 
+
+The cache optimization works by making a working copy of the data at a memory address and moving it into the lower latency memory closer to the core. The core can manipulate this memory locally and write it out to main memory when it is complete. When access to a memory address is predictable or frequent, data at memory addresses can be moved ahead of time, or prefetched, to the cache, and the core can benefit from the lower latency of the cache memory.   
+
+Although memory is byte addressed, the cache system manages information in 64 byte segments called cache lines. Caches are typically n-way set associative. A set can hold up to n cache lines which share a common portion of their memory address. 
+
+For example, a 32kB 8-way set associative cache has 512 cache lines split into 64 sets. Each set accepts memory addresses with bits 6-11 of the memory address in common. 
+
+When a cache is full, the least recently used cache line is evicted to a lower level cache or main memory in favor of a newer cache line. 
+
+When multiple cores access memory in the same cache line the copies resident in each core's cache may become inconsistent. Cores can snoop on another core's cache line status. If a core detects that a cache line has been modified on another core, the snooping core signals the modifying core which then forwards the modified cache line, causing an increase in access time\cite{IntelDevelopersManual}. In a concurrent program multiple cores may be writing to separate addresses resident in the same cache line. The cache line is shared between cores although the memory addresses are not. This false sharing of the memory addresses increases access latency for all cores operating on the cache line. 
 
 \section{Schemes for Shared Memory Access}
+Of course concurrent programs not only false share cache lines, they perform operations on the same memory addresses as well. Without careful synchronization by the programmer multiple cores can read and modify a memory address concurrently producing a non-deterministic result. Some of the methods for preventing this data race are described below. 
 % Locking
+Mutual Exclusion (Mutex) locks synchronize memory access through a variable that a thread must claim before moving forward with its data altering, or critical, section. When a competing thread views the lock as occupied it will wait to execute its critical section until it gets exclusive control of the lock. 
+
+There are several ways of implementing the MUTEX lock. // expand upon this.  
+
+Regardless of the implementation, synchronization schemes using locks suffer bottlenecks due to sharing the lock variable across multiple processors or sockets. In fine grained locking schemes these lock variables may take up a significant portion of memory (validate this). Additionally, memory modified in the critical section may reside in another cache, local DRAM, or another NUMA node's DRAM. 
 % Atomic Operations
+Atomic operations are those operations where 
 % Transactional Memory
 
 \section{Delegation}
