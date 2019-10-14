@@ -156,7 +156,7 @@
 \end{list}
  
 \summary
-Synchronization by delegation has been shown to increase total throughput in highly parallel systems over locking, \cite{ffwd} but the latency inherent in passing messages between cores introduces a bottleneck in overall throughput. To mitigate the effects of this bottleneck we introduce parallelism in message passing by enabling asynchronous delegation calls. 
+Synchronization by delegation has been shown to increase total throughput in highly parallel systems over coarse grained locking, \cite{ffwd} but the latency inherent in passing messages between cores introduces a bottleneck in overall throughput. To mitigate the effects of this bottleneck we introduce parallelism in message passing by enabling asynchronous delegation calls. 
 
 We present two designs for asynchronous delegation, dedicated and flat. In dedicated delegation hardware threads act exclusively as a client or server as opposed to flat delegation where hardware threads share duty as both client and server. 
 
@@ -166,22 +166,33 @@ We compare the designs and throughput of asynchronous delegation to that of  FFW
 Further, we examine the effects of hardware on the performance of asynchronous delegation and provide guidance to programmers for tuning their systems. 
 
 \chapter{Background and Motivation}
+\section{Synchronization}
+Threads operating on the same memory space encounter a data race when they are simultaneously reading and modifying the same memory address. This condition results in a non-deterministic outcome of the program. 
+
+For access to individual words, locked atomic instructions provide a guarantee that a write will be seen consistently across all threads. The guarantee is made by locking the system bus or in the processor's cache coherency policy \cite{IntelDevelopersManual}. The locked operations are slower than their standard counterparts; for example the locked compare and exchange instruction, LOCK CMPXCHG, on Intel Skylake takes 18 cycles while a CMPXCHG  instruction takes 6 \cite{agner}. 
+
+The compare and exchange instruction can be used to implement a mutual exclusion (mutex) lock. Upon a successful write to the lock variable using LOCK CMPXCHG a thread can proceed to perform a more complicated critical section using non-atomic instructions, and then release the lock. The effect is accesses to the shared memory are serialized and threads without access to the lock end up waiting until the lock is available to do useful work. 
+
 \section{Delegation}
-Delegation is a memory synchronization scheme for parallel programs that eliminates the race condition by providing exclusive control over a block of memory addresses to a single thread called a \textit{server}. Servers receive requests to perform an operation on their memory from other threads called \textit{clients} via a 64 Byte struct containing a function pointer, up to 6 arguments, and a status flag. Similarly responses are communicated via a 16 Byte struct containing a return value and a status flag.  
+\begin{figure}[ht!]
+\centering
+\includegraphics[width=0.9\columnwidth]{FIG/general_delegation.png}
+\caption{A delegation system with 3 clients and 3 servers. The foreground client makes a request to all three servers. }
+\label{fig:general_delegation}
+\end{figure}
+Delegation, on the other hand, provides exclusive control over a block of memory addresses to a single thread called a \textit{server}. Servers receive requests to perform an operation on their memory from other threads called \textit{clients} via a 64 Byte struct containing a function pointer, up to 6 arguments, and a status flag. Similarly responses are communicated via a 16 Byte struct containing a return value and a status flag.  
 
-Requests and responses are written to request and response lines, which are arrays of requests or responses. Every thread contains at least one requ
+Every server-client pair has at least one dedicated request line and one dedicated response line. ~\ref{fig:general_delegation} shows a system with 3 clients and 3 servers. The client in the foreground makes a request to its allocated request line on all three servers. The server performs an operation in its delegated memory space, and writes the response to the response line allocated to that specific client. Since each request and response line has only one writer, there is no data race. 
 
-Servers and Clients pass requests and responses to each other through request and response structures. Each request is a 64 Byte struct containing a function pointer, up to 7 arguments, and a status flag. Responses are a 16 Byte struct containing a return value and a status flag. Requests are passed from client to server by writing to a request line. Each thread maintains an array of request lines for every other thread.   arrays of request and response lines. 
-
-An advantage of delegation is spatial locality of memory. A block of memory accessed exclusively by a delegation server is never shared with another thread. When the delegated memory block is sufficiently small, the entire working memory may fit within a server's higher levels of cache and remain resident for the duration of the program. In contrast, a system with multiple physical cores accessing the same size memory block will share cache lines, greatly reducing the likelihood of a higher level cache hit. 
-
-Each delegation \textit{server} iterates through an array of requests. Requests include a flag, function pointer, and up to (6) 64 bit variables to be passed as arguments. When a new request is encountered the server moves the variables included in the request to the appropriate registers and then calls the function pointer. The server stores the return value from the function and the flag variable into an array of responses. There is at least one request and response entry for each client thread. 
+Each delegation \textit{server} iterates through an array of requests. When a new request is encountered the server moves the variables included in the request to the appropriate registers and then calls the function pointer. The server stores the return value from the function and the flag variable into an array of responses. 
 
 \textit{Clients} maintain an array of request pointers targeting the client's assigned request line on each server. Likewise \textit{clients} also maintain an array of pointers to the servers' responses. A client identifies a response is ready when it reads that the flag in the response is equal to the value it was set to in the request. 
 
-From the client perspective, a drawback of delegation is the latency from request issuance to response. In ffwd, a synchronous delegation system, clients issue a request to the server's request line and then poll the respective response line until the request is returned. Besides exposing a synchronous paradigm to the programmer, there is no reason why a client thread cannot do other productive work during this period.  
+An advantage of delegation is spatial locality of memory. A block of memory accessed exclusively by a delegation server is never shared with another thread. When the delegated memory block is sufficiently small, the entire working memory may fit within a server's higher levels of cache and remain resident for the duration of the program. In contrast, a system with multiple physical cores accessing the same size memory block will share cache lines, greatly reducing the likelihood of a higher level cache hit. 
 
-To that end, Gepard enables a thread to switch to productive work through the use of user space threads, or fibers, while maintaining a synchronous appearance to the programmer. Gepard clients write a delegation request to the server then make a rapid context switch to another working client fiber. After some time the client fiber will be reactivated, read its response, and then begin the cycle over again. Although the latency of a single request remains nearly constant, the overall throughput is increased by issuing parallel requests. 
+From the client perspective, a drawback of delegation is the latency from request issuance to response. In ffwd, a synchronous delegation system, clients issue a request to the server's request line and then poll the respective response line until the request is returned. The time to complete a single delegated operation includes the time to write to the server, perform the function, and then receive the response. 
+
+Gepard introduces concurrency in delegation operations while maintaining a synchronous appearance to the programmer by enabling a thread to switch to productive work through the use of fibers. Gepard clients write a delegation request to the server then make a rapid context switch to another working client fiber. After some time the client fiber will be reactivated, read its response, and then begin the cycle over again. Although the latency of a single request remains nearly constant, the overall throughput is increased by issuing parallel requests. 
 
 Gepard shows XXpc increased throughput from ffwd on XX benchmark by issuing parallel requests. However, we see that Gepard servers are capable of handling many more requests per second than can be provided by Gepard clients. If the programmer can tolerate an asynchronous paradigm 
 
@@ -204,7 +215,21 @@ The difference is evident in the change to the API. While \textit{Gepard} and \t
 To use asynchronous delegation the user must first initialize a number of delegation servers using \textbf{Launch\_Server}. Running on separate OS threads, the servers begin sequentially polling their request lines. The user then launches OS threads with the application code by calling \textbf{Delegate\_Thread\_Create} which allocates an empty queue of pending requests for each running server on the appropriate NUMA node. Within the application code the programmer uses \textbf{Delegate\_Async} to enqueue a pending request and issue the requests by the scheduling policy. The user can call \textbf{Delegate\_Async\_Barrier} to ensure that all outstanding requests are served before moving on. However \textbf{Delegate\_Async\_Barrier} is always called upon return of the application code. 
 
 \section{Dedicated Delegation}
+\begin{figure}[ht!]
+\centering
+\includegraphics[width=0.9\columnwidth]{FIG/dedicated_async.png}
+\caption{A delegation system with 1 client and 3 servers. The foreground client makes a request to all three servers. Requests are written to a pending request buffer which is periodically flushed out to the request line. }
+\label{fig:flat_delegation}
+\end{figure}
+Like \textit{Gepard} and \textit{FFWD} dedicated delegation utilizes threads acting exclusively as clients or servers. 
 \section{Flat Delegation}
+\begin{figure}[ht!]
+\centering
+\includegraphics[width=0.9\columnwidth]{FIG/flat_async.png}
+\caption{A flat delegation system with 3 client-server threads. The foreground client makes a request to itself. The background client makes a request to the foreground server. }
+\label{fig:flat_delegation}
+\end{figure}
+On the other hand, threads in flat delegation serve as both clients and servers. 
 \section{Ordering Guarantees}
 Mention that if we can accept reordering of delegated tasks we can expand the number of request lines. 
 
