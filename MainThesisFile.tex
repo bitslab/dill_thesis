@@ -149,6 +149,7 @@
 \item[AMS\hfill] American Mathematical Society
 \item[CPU\hfill] Central Processing Unit
 \item[CTAN\hfill] Comprehensive \TeX\ Archive Network
+\item[FIFO\hfill] First In First Out
 \item[NUMA\hfill] Non Uniform Memory Access
 \item[TUG\hfill] \TeX\ Users Group
 \item[UIC\hfill] University of Illinois at Chicago
@@ -200,7 +201,7 @@ Gepard shows XXpc increased throughput from ffwd on XX benchmark by issuing para
 \subsection{General}
 \begin{table}\small
   \begin{description}
-  \item[\bf Launch\_Server()] Starts a server thread, allocates and initializes the request and response lines.
+  \item[\bf Launch\_Servers()] Starts a server thread, allocates and initializes the request and response lines.
   \item[\bf Delegate\_Thread\_Create(f, arg)] Allocates and initializes a pending request queue for every server as thread local variable. Launches an OS thread to run function f with argument arg.   
   \item[\bf Delegate\_Async(s, cb, f, args...)]  Generates a delegation request to server s with function f and arguments args. Calls cb with the return value from f.
   \item[\bf Delegate\_Async\_Barrier()] Places requests from a delegated thread's queue and polls server responses until all requests have been served. 
@@ -208,11 +209,13 @@ Gepard shows XXpc increased throughput from ffwd on XX benchmark by issuing para
 \caption{Excerpt of the asynchronous delegation API. }
 \label{t:api}
 \end{table}
-In \textit{Gepard} and \textit{FFWD} the client application blocks after issuing a request until a response is received from the server. \textit{Gepard} was able to introduce some concurrency by switching fibers during this waiting period. However, by switching to an asynchronous programming model we can take better advantage of the latency between request and response. 
+In \textit{Gepard} and \textit{FFWD} the client application blocks after issuing a request until a response is received from the server. \textit{Gepard} hides the waiting time for the return value by switching fibers during this waiting period. However if we can tolerate an asynchronous programming model we can expose greater concurrency without the overhead of switching user space fibers. 
 
-The difference is evident in the change to the API. While \textit{Gepard} and \textit{FFWD} make a call to \textbf{delegate(s, retval, f, args)} and require a return value, asynchronous delegation makes a call to \textbf{Delegate\_Async(s, cb, f, args)} where cb is a callback function with the return value as a parameter. The entire API of asynchronous delegation is shown in Table \ref{t:api}. 
+The difference is evident in the change to the API. While \textit{Gepard} and \textit{FFWD} make a call to \textbf{delegate(s, retval, f, args)} and require a return value, asynchronous delegation makes a call to \textbf{Delegate\_Async(s, cb, f, args)} where cb is a callback function with the return value as a parameter. For most invocations a call to \textbf{Delegate\_Async(s, cb, f, args)} is non-blocking. 
+The entire API of asynchronous delegation is shown in ~\ref{t:api}. 
 
-To use asynchronous delegation the user must first initialize a number of delegation servers using \textbf{Launch\_Server}. Running on separate OS threads, the servers begin sequentially polling their request lines. The user then launches OS threads with the application code by calling \textbf{Delegate\_Thread\_Create} which allocates an empty queue of pending requests for each running server on the appropriate NUMA node. Within the application code the programmer uses \textbf{Delegate\_Async} to enqueue a pending request and issue the requests by the scheduling policy. The user can call \textbf{Delegate\_Async\_Barrier} to ensure that all outstanding requests are served before moving on. However \textbf{Delegate\_Async\_Barrier} is always called upon return of the application code. 
+The strategy for issuing requests to the delegation servers varies in the asynchronous designs detailed below. 
+
 
 \section{Dedicated Delegation}
 \begin{figure}[ht!]
@@ -221,7 +224,13 @@ To use asynchronous delegation the user must first initialize a number of delega
 \caption{A delegation system with 1 client and 3 servers. The foreground client makes a request to all three servers. Requests are written to a pending request buffer which is periodically flushed out to the request line. }
 \label{fig:flat_delegation}
 \end{figure}
-Like \textit{Gepard} and \textit{FFWD} dedicated delegation utilizes threads acting exclusively as clients or servers. 
+
+To use dedicated delegation the user must first initialize a number of delegation servers using \textbf{Launch\_Servers}. Running on separate OS threads, the servers begin sequentially polling their request lines. The user then launches OS threads with the application code by calling \textbf{Delegate\_Thread\_Create}. When a thread is started with \textbf{Delegate\_Thread\_Create} an empty queue of pending requests for each running server is allocated on the client's NUMA node. 
+
+Within the application code the programmer uses \textbf{Delegate\_Async} to enqueue a pending request. When any of the pending request queues is filled, the client works through its entire list of responses. When a response is ready, the client invokes the callback with the corresponding return value, and then writes a new request to the corresponding request line from the pending request queue. 
+
+At any time the user can call \textbf{Delegate\_Async\_Barrier} to ensure that all outstanding requests are served before moving on.  \textbf{Delegate\_Async\_Barrier} is always called upon return of the application code. 
+
 \section{Flat Delegation}
 \begin{figure}[ht!]
 \centering
@@ -229,14 +238,43 @@ Like \textit{Gepard} and \textit{FFWD} dedicated delegation utilizes threads act
 \caption{A flat delegation system with 3 client-server threads. The foreground client makes a request to itself. The background client makes a request to the foreground server. }
 \label{fig:flat_delegation}
 \end{figure}
-On the other hand, threads in flat delegation serve as both clients and servers. 
+
+Flat delegation runs clients and servers on the same thread. There is no call to \textbf{Launch\_Servers}, instead servers are initialized upon the call to \textbf{Delegate\_Thread\_Create}. ~\ref{fig:flat_delegation} illustrates how the same hardware thread works as both client and server. Each thread must make progress on its client's work while balancing availability to serve the requests which it has been assigned. 
+
+Like Dedicated Delegation, the programmer makes calls to \textbf{Delegate\_Async}. However, the number of client-server pairs in flat delegation is 
+\begin{displaymath}
+(number of threads)^2 
+\end{displaymath}
+compared to 
+\begin{displaymath}
+(number of clients) * (number of servers)
+\end{displaymath} 
+for dedicated. Maintaining the pending request queues for each client-server pair easily exhausts the L1 cache. Instead, requests are written directly to the server's request line. 
+
+The direct request line write is handled as follows: The client keeps track of the most recently used request line on a server. Upon a \textbf{Delegate\_Async} call, the next response line is handled if available. After handling the response, if the request line is free the request is written out. An unavailable request line implies that this client is waiting on another server. The thread remains productive by serving all of its request lines and then returning to the client. The client will continue invoking the server until its desired request line becomes available. 
+
+Like dedicated delegation, \textbf{Delegate\_Async\_Barrier} is invoked to ensure that all outstanding requests and responses are handled before joining. 
+
 \section{Ordering Guarantees}
-Mention that if we can accept reordering of delegated tasks we can expand the number of request lines. 
+\begin{figure}[ht!]
+\centering
+\includegraphics[width=0.9\columnwidth]{FIG/multiple_rl_race.png}
+\caption{The server may execute requests out of order when multiple requests lines are used by one client. (1.) The client issues 3 requests before the server reaches its section of the request line array. (2.) The server handles all requests in this clients section before the client writes a fourth request. (3.) The client writes its next request into the next available line, after request 4 is written the next line is the first one. The requests are now executed out of order.}
+\label{fig:mulitple_rl_race}
+\end{figure}
+Beyond the concurrency we can achieve by writing to multiple servers at once, we can also pass multiple requests to the same server simultaneously. To do this we increase the number of request lines available to a client on each server. 
+
+Servers handle requests by iterating through all of their request lines and performing those requests with the appropriate flag. However, when there are multiple request lines per server-client pair we cannot guarantee that the requests will be performed in the order they are sent. Consider the case shown in ~\ref{fig:multiple_rl_race}.  A client writes a request to all but one of its request lines before the server handles the entire batch. Afterward the client writes requests to its last request line and then begins writing new requests to its first request line. Since the server handles requests in the order of the request line array, newer requests are handled before the oldest request in the last position. 
+
+For an application with non-commutative properties a single request line preserves the ordering of requests made by a client to a specific server. Experimental results are shown with both 1 and 16 request lines per client-server pair to show the difference in throughput while maintaining ordering. 
 
 %An asynchronous delegation client initializes a FIFO queue for each available server.  The queue is implemented as a fixed size circular array so that memory can be allocated once upon the creation of the client thread. When an asynchronous delegation request is generated by the application, the \textbf{Delegate_Async} call attempts to enqueue the request. If the queue is not full, \textbf{Delegate_Async} returns and the client program can resume execution. When the queue is full, \textbf{Delegate_Async} cycles through each of its dedicated request and response lines. When a response line indicates a matching response to a request, the call back function is run on the return value and a new request is written if available. 
 
 \chapter{Experimental Evaluation}
+Here we compare asynchronous delegation 
+
 \section{Throughput on Fetch and Add}
+
 Here we compare throughput between locking, Gepard, Async-Dedicated, Async-Flat, Async-Dedicated-Unordered, Async-Flat-Unordered, atomic increment. 
 
 Figure: max throughput by number of shared variables
