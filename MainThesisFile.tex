@@ -290,7 +290,9 @@ From ~\ref{fig:dedicated_thput_client_server} and ~\ref{fig:dedicated_vary_queue
 
 The probability that \textbf{Delegate\_Async()} will block with slower frequency increases with the length of the request queue. The probability, P, that a system with S queues of length L will block after L total requests follows $ P = \frac{S}{L^{S}} $. Clearly the probability of stopping after L total requests drops rapidly as the queue length increases. Intuitively, this also provides the opportunity for requests to be cached across a range of servers. When the queue is sufficiently long and there is diversity in requests, we have a good probability that each queue will hold requests to fill all the request lines when \textbf{Delegate\_Async()} blocks. 
 
-~\ref{fig:saturation16RL} confirms all of the above desirable traits of the queue length. As the queue length increases, the proportion of failed queue pop operations to successful one plummets. The increased period between response line polls also results in higher response availability. More requests are written to the server, with server occupancy topping out at 60\%. After about double the number of request lines, however, the benefits of the longer queue begin to erode. This is shown by the 64 length queue in ~\ref{fig:dedicated_vary_queue}. When the queue is too long the request production and consumption rates reach a steady state and the queue's only impact is to hold more requests until they are ready. This is shown in ~\ref{fig:saturation1RL} and \ref{fig:saturation16RL} by the increase in individual request latency as the queue length increases. 
+~\ref{fig:saturation16RL} confirms all of the above desirable traits of the queue length. As the queue length increases, the proportion of failed queue pop operations to successful one plummets. The increased period between response line polls also results in higher response availability. More requests are written to the server, with server occupancy topping out at 60\%. After increasing pending request queue length to double the number of request lines, however, the benefits of the longer queue begin to erode. This is shown by the 64 length queue in ~\ref{fig:dedicated_vary_queue}. When the queue is too long it acts like a reservoir, impounding requests for a longer period of time without impacting the throughput of the system. This is shown in ~\ref{fig:saturation1RL} and \ref{fig:saturation16RL} by the increase in individual request latency as the queue length increases. 
+
+As a rule of thumb, we set the pending request queue to double the amount of request lines per client - server pair. This configuration provides high throughput while leaving cache available for delegated data structures. 
 
 \section{Comparison with Gepard}
 While \textit{Gepard} provides concurrency via a context switch during its blocking \textbf{Delegate} call, asynchronous delegation decouples the request and response polling altogether. The difference is that asynchronous delegation can enqueue a 64 B  request while \textit{Gepard} must preserve a 1 KB stack and spend processor time on the context switch. Besides the advantage of running significantly fewer instructions per operation, the much smaller memory footprint of asynchronous delegation increases the amount of cache available for delegated data structures when sharing a physical core with a delegation server.  % Validate these claims
@@ -303,19 +305,28 @@ While \textit{Gepard} provides concurrency via a context switch during its block
 \label{fig:flat_delegation}
 \end{figure}
 
-Flat delegation runs clients and servers on the same thread. There is no call to \textbf{Launch\_Servers}, instead servers are initialized upon the call to \textbf{Delegate\_Thread\_Create}. ~\ref{fig:flat_delegation} illustrates how the same hardware thread works as both client and server. Each thread must make progress on its client's work while balancing availability to serve the requests which it has been assigned. 
+Flat delegation combines the client and server roles of dedicated delegation into a single thread. The goal is to simplify delegation programming by finding a natural equilibrium between client and server rather than the user specified client to server ratio of dedicated delegation. ~\ref{fig:flat_delegation} sketches a sample flat delegation system with three OS threads splitting duty as client and server. Functions performing client and server duty are called from the same thread represented by the split box in the center of the figure. In ~\ref{fig:flat_delegation} the client generates requests and writes them out to the request line of the desired server, which may be the server to be invoked later on the same thread. Depending on the scheduling policy, the server function will be called to handle the requests on its request line. 
 
-Like Dedicated Delegation, the programmer makes calls to \textbf{Delegate\_Async}. However, the number of client-server pairs in flat delegation is 
-\begin{displaymath}
-N_{threads}^2 
-\end{displaymath}
-compared to 
-\begin{displaymath}
-N_{clients} * N_{servers}
-\end{displaymath} 
-for dedicated. Maintaining the pending request queues for each client-server pair easily exhausts the L1 cache. Instead, requests are written directly to the server's request line. 
+Since flat delegation does not launch dedicated server threads there is no call to \textbf{Launch\_Servers}. Besides this difference the API remains the same as dedicated delegation. 
 
-To directly write the request line the client keeps track of the most recently used request line on a server. Upon a \textbf{Delegate\_Async} call, the next response line is handled if available. After handling the response, if the request line is free the request is written out. An unavailable request line implies that this client is waiting on another server. The thread remains productive by serving all of its request lines and then returning to the client. The client will continue invoking the server until its desired request line becomes available. 
+\section{Design Parameters for Flat Delegation}  
+
+%\begin{figure}[ht!]
+%\centering
+%\includegraphics[width=0.9\columnwidth]{FIG/flat_delegation_trials.pdf}
+%\caption{Flat delegation throughput by scheduling policy}
+%\label{fig:flat_delegation_trials}
+%\end{figure}
+
+Although the API for asynchronous flat delegation remains the same, within \textbf{Delegate\_Async()} the client must write out requests and determine when to invoke the server function. Additionally, the behavior of the server differs from dedicated delegation. Flat delegation servers run periodically as determined by the scheduling policy instead of continuously as they do in the dedicated approach. 
+
+Because of these key differences, we've experimented with a handful of approaches to making requests and when to invoke the server. The throughput of these experiments using the same microbenchmark in \ref{Design Parameter for Asynchronous Dedicated Delegation} is summarized in ~\ref{fig:flat_delegation_trials}. Note that the horizontal axis describes the number of client server pairs, and can also be read as the total number of threads running in the system. 
+
+The result labeled pending request queue follows a similar policy to asynchronous dedicated delegation, the difference being that when a push to a queue fails, the client writes out its requests and then invokes the server. 
+
+Since the server behavior is different, we experimented with writing requests directly to a servers request line. To directly write the request line the client keeps track of the most recently used request line on a server. Upon a \textbf{Delegate\_Async} call, the next response line is handled if available. After handling the response, if the request line is free the request is written out. An unavailable request line implies that this client is waiting on another server. 
+
+The thread remains productive by serving all of its request lines and then returning to the client. The client will continue invoking the server until its desired request line becomes available. 
 
 Like dedicated delegation, \textbf{Delegate\_Async\_Barrier} is invoked to ensure that all outstanding requests and responses are handled before joining. 
 
