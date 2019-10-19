@@ -311,24 +311,27 @@ Since flat delegation does not launch dedicated server threads there is no call 
 
 \section{Design Parameters for Flat Delegation}  
 
-%\begin{figure}[ht!]
-%\centering
-%\includegraphics[width=0.9\columnwidth]{FIG/flat_delegation_trials.pdf}
-%\caption{Flat delegation throughput by scheduling policy}
-%\label{fig:flat_delegation_trials}
-%\end{figure}
+\begin{figure}[ht!]
+\centering
+\includegraphics[width=0.9\columnwidth]{FIG/flat_delegation_strategy.pdf}
+\caption{Flat delegation throughput by scheduling policy}
+\label{fig:flat_delegation_strategy}
+\end{figure}
 
-Although the API for asynchronous flat delegation remains the same, within \textbf{Delegate\_Async()} the client must write out requests and determine when to invoke the server function. Additionally, the behavior of the server differs from dedicated delegation. Flat delegation servers run periodically as determined by the scheduling policy instead of continuously as they do in the dedicated approach. 
+Although the API for asynchronous flat delegation remains the same, within \textbf{Delegate\_Async()} the client must write out requests and determine when to invoke the server function. In addition, flat delegation servers run periodically as determined by the scheduling policy instead of continuously as they do in the dedicated approach. Because of these key differences, we've reconfigured the strategy for writing requests to servers and experimented with the scheduling policy. 
 
-Because of these key differences, we've experimented with a handful of approaches to making requests and when to invoke the server. The throughput of these experiments using the same microbenchmark in \ref{Design Parameter for Asynchronous Dedicated Delegation} is summarized in ~\ref{fig:flat_delegation_trials}. Note that the horizontal axis describes the number of client server pairs, and can also be read as the total number of threads running in the system. 
+The throughput of these experiments using the same microbenchmark in \ref{Design Parameter for Asynchronous Dedicated Delegation} is summarized in ~\ref{fig:flat_delegation_trials}. Note that the horizontal axis describes the number of client server pairs, and can also be read as the total number of threads running in the system. 
 
-The result labeled pending request queue follows a similar policy to asynchronous dedicated delegation, the difference being that when a push to a queue fails, the client writes out its requests and then invokes the server. 
+The main difference we've made to writing requests is to issue them directly to the server's request line. To directly write the request the client keeps track of the most recently used request line on a server. Upon a \textbf{Delegate\_Async} call, the next response line is handled if available. After handling the response, if the request line is free the request is written out. An unavailable request line signifies that the remote server has not run for some time. 
 
-Since the server behavior is different, we experimented with writing requests directly to a servers request line. To directly write the request line the client keeps track of the most recently used request line on a server. Upon a \textbf{Delegate\_Async} call, the next response line is handled if available. After handling the response, if the request line is free the request is written out. An unavailable request line implies that this client is waiting on another server. 
+Perhaps the simplest strategy for invoking the server function is upon a failed write to a request line. After all, if the client is blocked waiting for a server to become available, the most useful thing it can do is run the server itself. ~\ref{fig:flat_delegation_strategy} shows that this yields the highest throughput on our microbenchmark. 
 
-The thread remains productive by serving all of its request lines and then returning to the client. The client will continue invoking the server until its desired request line becomes available. 
+A proposed optimization to the serve when blocked policy was to fast track requests to a server on the same thread as the client by invoking the delegated function directly. The unintended impact of this optimization was the greedy client problem: the system collapses to the equivalent of a 55 server 1 client dedicated system. The problem is caused when victim threads write requests to the full request lines of the greedy client. The victim threads begin operating in server mode until the request line becomes available. However, the request line never becomes available because the greedy client's requests continue to be served by the victim threads. The greedy client problem was avoided in the serve when blocked strategy because the client was guaranteed to invoke the server function when writes to the request lines of its own server blocked. The fast track eliminated this natural trigger. 
 
-Like dedicated delegation, \textbf{Delegate\_Async\_Barrier} is invoked to ensure that all outstanding requests and responses are handled before joining. 
+To break the greedy client we implemented the doorbell strategy to invoke the server. When a client blocks on an unavailable request line it "rings the doorbell" of the required thread by writing a 1 to its doorbell variable. Clients check their doorbell during each call to \textbf{Delegate\_Async} and invoke the server, resetting the doorbell to zero after a run of the server loop. Analysis with perf showed ringing the doorbell to be a time consuming operation. 
+
+Another server scheduling strategy is to invoke the server function after a fixed number of calls to \textbf{Delegate\_Async()}. This strategy is effective when a small number of threads is operating at a slower pace than the others. Consider the case when the system is running with 29 total threads. At 29 threads a single pair of threads is sharing the resources of one core, slowing down their individual execution. The serve when blocked strategy has been observed to operate at the pace of the slowest thread. By invoking the client based on an internal parameter (calls to \textbf{Delegate\_Async()} rather than an external parameter (full request lines), the thread breaks its reliance on the slow thread when the trigger number of invocations is sufficiently small. 
+
 
 \section{Ordering Guarantees}
 \begin{figure}[ht!]
