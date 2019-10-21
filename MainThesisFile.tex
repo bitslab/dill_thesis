@@ -355,13 +355,11 @@ Servers handle requests by iterating through all of their request lines and perf
 For an application with non-commutative properties, the programmer can take care to delegate the entire order critical section. It that is unfeasible, a single request line preserves the ordering of requests made by a client to a specific server. Experimental results are shown with both 1 and 16 request lines per client-server pair to show the difference in throughput while maintaining ordering. 
 
 \chapter{Experimental Evaluation}
-The following results shown are from a 28 core, 56 thread Intel Skylake machine with 97 GB of RAM, 32kB of L1 cache, 1,024KB of L2 cache, and 19,712kB L3 cache shared among the 14 physical cores on each socket. 
+The following results shown are from a 28 core, 56 thread Intel Skylake machine with 97 GB of RAM. The system has three levels of cache, 32KB of L1 cache and 1,024KB of L2 non-inclusive and shared between hyperthreads on the same core. Our machine has 19,712KB L3 cache per socked shared among the 14 physical cores. 
 
-For locking, atomic operations, and flat delegation we use the number of threads available on the machine (56) unless stated otherwise. For trials with the dedicated organization we list the number of servers. The balance of remaining threads are clients.  The client and server ratio is selected by the best results with 1 variable per server. 
+For spin, mutex, atomic, and flat delegation we use the number of threads available on the machine (56) unless otherwise stated. For trials with dedicated delegation \textit{async} and \textit{gepard} we list the number of servers. The balance of remaining threads are clients.  
 
 Like \textit{Gepard}, asynchronous delegation threads are assigned to cores in a round-robin fashion. In the dedicated case all server threads are launched before any client threads. Memory for delegated data structures is allocated on the NUMA node corresponding to the server which it is assigned. 
-
-Results shown are the weighted arithmetic mean performance over 10 runs of three seconds or greater. 
 
 \section{Fetch and Add Performance}
 \begin{figure}[ht!]
@@ -371,26 +369,23 @@ Results shown are the weighted arithmetic mean performance over 10 runs of three
 \label{fig:fetch_and_add_thput}
 \end{figure}
 
-The experiment shown in ~\ref{fig:fetch_and_add_thput} selects a variable at random and then increments it using the synchronization type shown. Each variable is 64 Bytes and 64 Byte aligned. The locking cases are the posix mutex and spin lock. For the locking case the lock takes the place of padding in the variable struct. There is one lock per variable. In cases where variables cannot be delegated evenly, the number of variables is rounded up to the nearest multiple of the number of servers. 
+The experiment shown in ~\ref{fig:fetch_and_add_thput} allocates a user specified number of 64B variables shown on the x-axis. OS threads are launched, and for three seconds each thread selects a variable at random and then increments that variable by its synchronization technique. After three seconds the threads are joined and the throughput in Million Operations per Second (MOPS) is reported. 
 
-Delegation approaches excel for smaller numbers of shared variables. Notice dedicated delegation achieves over 600 MOPS for shared variable counts up to the size of the server cache. Flat delegation achieves consistent performance, topping out near 500 MOPS. The reason for this even performance at low levels of shared variables is a lack of contention.
+The experiment was run with locking approaches, \textit{mutex} and \textit{spin}; atomic fetch and add (\textit{atomic}); and delegation approaches (\textit{Gepard}, \textit{async-16s}, and \textit{async-flat}). 
 
-\begin{figure}[ht!]
-\centering
-\includegraphics[width=0.9\columnwidth]{FIG/hitm_per_op.pdf}
-\caption{Remote hitm L3 cache invalidations by variable size. }
-\label{fig:contention}
-\end{figure}
+The delegation approaches allocate memory as a two dimensional array, where the rows are the array dedicated to the individual server thread. \textbf{numa\_alloc\_onnode} is used to allocate the delegated data structures into dram local to the intended server's core. For flat delegation the number of shared variables is rounded up to the next highest multiple of the number of servers. For example 128 variables is rounded up to 168. For dedicated approaches when the number of shared variables is smaller than the requested number of servers the number of servers is reduced. For example a 16 server dedicated system handling 4 shared variables will run with 4 servers and 52 clients. 
 
-A variable is contended if multiple threads are trying to access it simultaneously. Neglecting interleaving due to time, the chance that at least one pair of threads in the system are contending for a variable is plotted in ~\ref{fig:contention} and described as follows. : 
-\begin{displaymath}
-contention = 1 - {{ variables \choose threads }  \over  variables^{threads}}
-\end{displaymath}
+The atomic and locking approaches allocate memory using \textbf{malloc} as a single array. 
 
+Delegation approaches excel for smaller numbers of shared variables. Notice dedicated delegation achieves over 600 MOPS for shared variable counts up to the size of the server cache. Flat delegation achieves consistent performance, topping out just under 500 MOPS. The reason for this even performance at low levels of shared variables is a lack of contention.
 
-The fine grained locks and the atomic fetch and add have up to 56 threads accessing a single memory location. ~\ref{fig:fetch_and_add_thput} shows the atomic fetch and add and the fine grained locks reach peak performance as the probability of contention reaches 0 ~\ref{fig:contention}. In our microbenchmark, where each thread executes transactions at random, we can assume contention for variables among cores renders the L1 and L2 cache useless because the cache lines are constantly being invalidated by competing cores. We can observe this behavior in the number of L3 lines invalidated by a remote processors L3 cache. 
+A variable is contended if multiple threads are trying to access it simultaneously. The chance that at least one pair of threads in the system is contending for a variable is plotted in ~\ref{fig:contention} and described by $C = 1 - {{ V \choose T }  \over  V^{T}}$, where C is the probability of contention, V is total number of shared variables, and T is the number of threads. Of course the probability that all threads are contending is less than or equal to the probability that just one pair of threads are contending. We can see that the atomic and locking approaches do not reach peak throughput until after the probability of contention becomes trivial, near 2\textsuperscript{15} shared variables. 
 
-In contrast, the delegation approaches, by design, have no contention for variables. When the number of shared variables is sufficiently small, the entire data set may be kept in a core's L1 and L2 cache. For the 16 server dedicated delegation case shown, each delegation server shares, as a hyperthread, a core with a delegation client. The combined overhead of the two threads is about 93 kB. This amount consumes the entire L1 cache and 62 kB of the L2. This leaves 962 kB of L2 cache for data. 960 kB translates to 15 k variables per server, or 246 k variables for the system. L2 cache should be exhausted at 2\textsuperscript{18} variables, which is where we see the performance begin to degrade. Further, the portion of L3 cache available to the server is roughly 1 / N\textsubscript{server on processor} of the L3 on the processor, or 2,464 kB. This translates to 39 k additional variables per server, or 630 k more variables for the system. L3 is exhausted when the number of shared variables approaches 2\textsuperscript{20}. Performance continues to degrade as the number of variables resident in DRAM increases and the likelihood of cache hits decreases. 
+The fine grained locks and the atomic fetch and add have up to 56 threads accessing a single memory location. ~\ref{fig:fetch_and_add_thput} shows the atomic fetch and add and the fine grained locks reach peak performance as the probability of contention reaches 0 ~\ref{fig:contention}. 
+
+In contrast, the delegation approaches, by design, have no contention for variables. When the number of shared variables is sufficiently small, the entire data set may be kept in a core's L1 and L2 cache. For the 16 server dedicated delegation case shown, each delegation server shares, as a hyperthread, a core with a delegation client. The combined overhead of the two threads is about 93 KB. This amount consumes the entire L1 cache and 62 KB of the L2. This leaves 962 KB of L2 cache for data. 960 KB translates to 15,000 variables per server, or 246,000 variables for the system. L2 cache should be exhausted at 2\textsuperscript{18} variables, which is where we see the performance begin to degrade. 
+
+Further, the portion of L3 cache available to the server is roughly $1 / N_{servers on processor}$ of the L3 on the processor, or 2,464 KB. This translates to 39,000 additional variables per server, or 630,000 more variables for the system. L3 is exhausted when the number of shared variables approaches 2\textsuperscript{20}. Performance continues to degrade as the number of variables resident in DRAM increases and the likelihood of cache hits decreases. 
 
 %For quantities of shared variables smaller than the size of a single processors cache contention should be evident in L3 cache hits. More L3 cache hits indicate more contention because uncontended variables should remain in a processors exclusive L1 or L2 cache. ~\ref{fig:contention} shows delegation approaches with fewer L3 cache hits per operation compared to the atomic fetch and add and the fine grained mutex lock. 
 
@@ -401,60 +396,30 @@ In contrast, the delegation approaches, by design, have no contention for variab
 \label{fig:vary_server}
 \end{figure}
 
-A variable is contended if multiple threads are trying to access it simultaneously. Neglecting interleaving due to time, the chance that at least one pair of threads in the system are contending for a variable is plotted in ~\ref{fig:contention} and described as follows. : 
-\begin{displaymath}
-contention = 1 - {{ variables \choose threads }  \over  variables^{threads}}
-\end{displaymath}
+\begin{figure}[ht!]
+\centering
+\includegraphics[width=0.9\columnwidth]{FIG/ram_accesses_by_type.pdf}
+\caption{Delegation loads from RAM}
+\label{fig:ram_loads}
+\end{figure}
 
-A common theme across all approaches is the degradation of performance beginning around 2\textsuperscript{20} shared variables. Due to the randomness in the benchmark, the probability that an approach will be reading from DRAM nears 1 as the number of shared variables increases. Much slower access to DRAM dominates the performance of all approaches in this region, however the degradation in performance is particularly extreme for dedicated delegation because accesses are made by a smaller subset of cores. ~\ref{fig:vary_server} shows as the number of server cores increases the tail performance of dedicated delegation improves. 
+A common theme across all approaches is the degradation of performance beginning around 2\textsuperscript{20} shared variables. Due to the randomness in the benchmark, the probability that an approach will be reading from DRAM nears 1 as the number of shared variables increases. The probability, P  that a variable picked at random in a system with cache size $S_{cache}$, variable size $S_{variable}$, total number of variables $N_{variables}$ is $P = {{S_{cache} / S_{variable}} \over N_{variables}}$. As the probability that a variable is in cache approaches zero the time to access DRAM dominates the performance of the delegation server.
 
-%The microbenchmark accesses variables at random, so we will assume as the number of shared variables exceeds the amount of cache in the system that it is likely a variable will be evicted from cache before it is accessed again. 
+Much slower access to DRAM dominates the performance of all approaches in this region, however the degradation in performance is particularly extreme for dedicated delegation because accesses are made by a smaller subset of cores. ~\ref{fig:vary_server} shows as the number of server cores increases the tail performance of dedicated delegation improves. In ~\ref{fig:ram_loads} we measure the number of loads from RAM for flat delegation vs a 16 server dedicated delegation and observe that the total number of ram loads for dedicated remains below those for flat though the RAM loads per operation scales throughout the range.  
 
-In a similar vein, a strength of flat delegation is its ability to utilize every core in the machine for DRAM access. Flat delegation also benefits from the lower cycle time for an on NUMA Node DRAM access. In comparison, the spin lock or compare and swap will have a 1:N\textsubscript{NUMA Nodes} probability of picking a variable at random that is addressed on the same node as the core. A FIGURE I HAVENT MADE YET shows the number of accesses to remote dram per operation by approach. 
+\begin{figure}[ht!]
+\centering
+\includegraphics[width=0.9\columnwidth]{FIG/ram_accesses_by_type.pdf}
+\caption{Delegation loads from RAM}
+\label{fig:ram_loads}
+\end{figure}
 
-\begin{displaymath}
-{P_{In Cache}} = {{L2BytesAvailable} \over { size of shared variables / number of servers}}
-\end{displaymath}
-As the probability that a variable is in cache approaches zero the time to access DRAM dominates the performance of the delegation server. Flat delegation offers an improvement to other delegation designs in this region because it maintains the same number of threads making memory accesses while ensuring that all DRAM access are local to the thread's NUMA node. 
+In a similar vein, a strength of flat delegation is its ability to utilize every core in the machine for DRAM access. Flat delegation also benefits from the lower cycle time for an on NUMA Node DRAM access. In comparison, the locking approaches will have a $1:N_textsubscript{NUMA Nodes} $ probability of accessing a variable at random that is addressed on the same node as the core. 
 
-% Figure - DRAM Accesses by program by variable count
-% Run and discuss the Hash Map here. 
-Where atomic operations are unfeasible, we would expect flat delegation to outperform all other options for the extreme end of the range. 
-
-
-
-
-
-The 16 request line case in ~\ref{dedicated_thput_client_server} exhibits the expected behavior. ~\ref{fig:dedicated_thput_client_server} shows the throughput for a simple fetch and add benchmark by increasing number of servers. In the region of the positive slope the system bottleneck is the server capacity. Each additional server added increases the system throughput by the individual server consumption rate. Conversely the region of the negative slope indicates the system bottleneck to be client production capacity. After peak throughput is achieved, reassignment of a client to server duty reduces the system throughput by the individual client production rate. The throughput peaks when the combined server consumption rate matches the combined production rate of the clients. 
-
-The dedicated design stores requests in an array of local queues, one for each server in the system (see ~\ref{fig:dedicated_delegation}).  When one of the queues is full, the client writes as many requests as it can.  FIGURE shows the effect of the queue length on the fetch and add microbenchmark. As the queue length increases, the system achieves greater throughput. This is because the probability of all queues having any requests present increases as the queue length increases. When servers are picked at random, the probability of stopping to flush the queues when only one queue contains requests is as follows: 
-\begin{displaymath}
-P(Full Queue) = {N_{queues} \over {N_{queues}}^{L_{queue}}}
-\end{displaymath}
-
-%This is because the longer queue lengths allow more requests to accumulate in each server queue before the requests are written out to the servers. Writing more requests at once brings greater efficienct to the client, as evidenced by the shallower slope of the ... 
-
-%Production Rate - Client
-%Consumption Rate - Server
-
-Figure: max throughput by client-server combination for all cores case
-	Discussion production rate of clients, consumption rate of clients
-Figure: Throughput by number of request lines
-Figure: Throughput by size of ring buffer, no ring buffer
-	Server and Client hit rate
-
-\section{Design Parameters for Flat Delegation}
-
-Instead of specifying the 
-
-Figure: Throughput by schedule type
-	Server and client hit rate
 
 \chapter{Conclusions}
-Flat provides and easier API, no tuning. 
-%Validate - does it extend the performance for larger data structures?
-Dedicated allows the user to adjust the producer / consumer rates
-Applications are programs with smallish data structures with operations more complicated than compare and swap. 
+We have shown that asynchronous delegation approaches outperform the synchronous delegation approach of \textit{Gepard} on the fetch and add benchmark. Further, asynchronous delegation can outperform fine-grained locking or atomic approaches when the delegated data structure fits within the server core's cache. Interestingly, flat delegation shows comparable performance to atomic and locking approaches as the size of the delegated data structure exceeds the size of the available cache. 
+
 
 
 %\chapter{Some other stuff I wrote but probably shouldn't be included}
