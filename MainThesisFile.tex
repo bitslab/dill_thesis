@@ -171,20 +171,11 @@ We compare the designs and throughput of asynchronous delegation to that of Gepa
 
 \chapter{Background and Motivation}
 \section{Synchronization}
-Parallel programs traditionally follow a model where multiple threads perform operations on the same data structure. This model creates the opportunity for a data race, a simultaneous access of shared memory by multiple threads that yields a non-deterministic result. A solution is to synchronize access to shared data structures through mutual exclusion (mutex) locks. 
+Parallel programs traditionally follow a model where multiple threads perform operations on the same data structure. This model creates the opportunity for a simultaneous access of shared memory by multiple threads that yields a non-deterministic result, or data race. The commonly implemented solution is to synchronize access to shared data structures through mutual exclusion (mutex) locks. 
 
 Mutex locks are realized through the use of locked atomic instructions. For access to individual words, locked atomic instructions provide a guarantee that a write will be seen consistently across all threads. The guarantee can be made by locking the system bus, but is more often achieved through the processor's cache coherency policy \cite{IntelDevelopersManual}. The locked operations are slower than their standard counterparts; for example the locked compare and exchange instruction, LOCK CMPXCHG, on Intel Skylake takes 18 cycles while a CMPXCHG  instruction takes 6 \cite{agner}. 
 
-A mutex lock works by 'claiming' a variable using an atomic instruction like LOCK CMPXCHG. If a thread is successful in writing to the variable it can proceed to operate on the critical section of shared memory, and then release the lock. If the thread is unsuccessful it will wait, by some policy, until it successfully claims the lock variable. This programming pattern serializes accesses to the shared memory therefore eliminating the data race. However when a lock is contended, threads may spend an inordinate amount of time waiting to acquire the lock rather than performing useful calculations. 
-
-
-%Commonly synchronize shared memory accesses through implementation of mutual exclusion (mutex) locks. This approach, where multiple OS threads access the same data structure, suffers from poor performance when data structures are contended and makes little use of a processor’s on-core cache. Mistakes in programs synchronized with locks may appear as non-deterministic program outcome and are notoriously difficult to debug. 
-
-
-
-%The compare and exchange instruction can be used to implement a mutual exclusion (mutex) lock. Upon a acquiring a lock though some type of locked atomic instruction, a thread can proceed to perform a more complicated critical section using non-atomic instructions, and then release the lock. This programming pattern effectively serializes accesses to shared memory and eliminates the data race. 
-
-%Traditionally, parallel programs have operated under a model where multiple threads perform operations on the same data structure. Threads operating on shared memory encounter a data race when they are simultaneously reading and modifying the same memory address. This condition results in a non-deterministic outcome of the program and is notoriously difficult to debug. Synchronization of shared memory has been traditionally achieved using atomic operations, when feasible, or a variety of mutual exclusion locking approaches. 
+A mutex lock works by 'claiming' a variable using an atomic instruction like LOCK CMPXCHG. If a thread is successful in writing to the variable it can proceed to operate on the critical section of shared memory, and then release the lock. If the thread is unsuccessful it will wait by some policy until it successfully claims the lock variable. This programming pattern serializes accesses to the shared memory therefore eliminating the data race. However when a lock is contended, threads may spend an inordinate amount of time waiting to acquire the lock rather than performing useful calculations. 
 
 \section{Delegation}
 \begin{figure}[ht!]
@@ -195,7 +186,7 @@ A mutex lock works by 'claiming' a variable using an atomic instruction like LOC
 \end{figure}
 Delegation, as described by Roghanchi et. al. in \textit{FFWD}\cite{FFWD}, grants exclusive control of a data structure to a single thread called a \textit{server}. \textit{Client} threads delegate operations on data structures to the appropriate \textit{server} by passing a message called a request. The \textit{server} is one thread, performing one operation at a time. The delegated operations are serialized and the data race eliminated. 
 
-Specifically, in \textit{FFWD} style delegation, servers receive requests to perform an operation on their memory from \textit{clients} via a 64 Byte struct containing a function pointer, up to 6 arguments, and a status flag. Similarly responses are communicated via a 16 Byte struct containing a return value and a status flag.  
+In \textit{FFWD} style delegation, servers receive requests to perform an operation on their memory from \textit{clients} via a 64 Byte struct containing a function pointer, up to 6 arguments, and a status flag. Similarly, responses are communicated via a 16 Byte struct containing a return value and a status flag.  
 
 Every server-client pair has at least one dedicated request line and one dedicated response line. ~\ref{fig:general_delegation} shows a system with 3 clients and 3 servers. The client in the foreground makes a request to its allocated request line on all three servers. The server performs an operation on its delegated data structure, and writes the response to the response line allocated to that specific client. Since each request and response line has only one writer, there is no data race nor any cache line contention.
 
@@ -203,16 +194,14 @@ Each delegation \textit{server} iterates through an array of requests. When a ne
 
 Programs using the delegation library typically initialize the data structure to delegate, launch the dedicated servers, and then launch threads running the client function through a POSIX threads like interface. 
 
-An advantage of delegation is spatial locality of memory. A block of memory accessed exclusively by a delegation server is never shared with another thread. When the delegated memory block is sufficiently small, the entire working memory may fit within a server's on-core cache and remain resident for the duration of the program. In contrast, a system with multiple physical cores accessing the same size memory block will share cache lines, greatly reducing the likelihood of a high level cache hit. 
+An advantage of delegation is spatial locality of memory. A block of memory accessed exclusively by a delegation server is never shared with another thread. A small delegated data structure may fit within a server's on-core cache and remain resident for the duration of the program. In contrast, a system with multiple physical cores accessing the same data structure will share cache lines, greatly reducing the likelihood of a high level cache hit. 
 
 From the client perspective, a drawback of delegation is the latency from request issuance to response. In \textit{FFWD}, a synchronous delegation system, clients issue a request to the server's request line and then poll the respective response line until the request is returned. The time to complete a single delegated operation includes the time to write to the server, perform the function, and then receive the response. 
 
 \textit{Gepard} introduces concurrency in delegation operations while maintaining a synchronous interface by enabling a thread to switch to productive work through the use of fibers. Based upon \textit{libfiber} \cite{libfiber}, \textit{Gepard} fibers are light-weight, cooperatively scheduled user mode threads. \textit{Gepard} threads run a fiber manager overseeing multiple client fibers. A client fiber writes a delegation request to the server then yields, thereby invoking the fiber manager which switches context to another client fiber. After some time the original client fiber will be reactivated and continue execution. The major advantage of \textit{Gepard} is that it enables a single thread to engage with multiple servers concurrently with the effect of increasing throughput despite constant individual request latency. 
 
-%In \textit{Gepard} and \textit{FFWD} the client application blocks after issuing a request until a response is received from the server. \textit{Gepard} hides the latency of the request by switching fibers during this waiting period. However if we can tolerate an asynchronous programming model we can expose greater concurrency without the overhead of switching user space fibers. 
-
 \chapter{Asynchronous Delegation}
-\subsection{General}
+
 \begin{table}[ht!]
 \begin{tabularx}{\linewidth}{| r | X |} %{ | p{2.5 in} p{4 in} | }
   \hline
@@ -231,13 +220,15 @@ From the client perspective, a drawback of delegation is the latency from reques
 \caption{Excerpt of the asynchronous delegation API}
 \end{table}
 
-By decoupling a delegation call from its response, Asynchronous Delegation is able to introduce more concurrency than \textit{Gepard} and achieve greater system throughput. Operations which \textit{Gepard} performs after a call to \textbf{delegate(s, retval, f, args)} are now done in a callback function invoked upon receipt of the response. The callback, if required, is passed to the delegate function in place of the return value as shown by \textbf{Delegate\_Async(s, cb, f, args)}. An excerpt of the asynchronous delegation API is shown  in ~\ref{tab:api}. 
+By decoupling a delegation call from its response, asynchronous delegation is able to introduce more concurrency than \textit{Gepard} and achieve greater system throughput. Operations which \textit{Gepard} performs after a call to \textbf{delegate(s, retval, f, args)} are now done in a callback function invoked upon receipt of the response. The callback, if required, is passed to the delegate function in place of the return value as shown by \textbf{Delegate\_Async(s, cb, f, args)}. An excerpt of the asynchronous delegation API is shown  in ~\ref{tab:api}. 
 
-The change in API allows asynchronous delegation to completely remove \textit{libfiber}, the agent of client side concurrency in \textit{Gepard}, and its associated memory and computation overhead. In \textit{Gepard}, one fiber represents one request-in-flight. Fibers must maintain the state of a 1KB run time stack. In our benchmarks \textit{Gepard} throughput peaks at 64 fibers / thread corresponding to a memory footprint of 64KB for 64 requests-in-flight. In contrast, asynchronous delegation requires only the 64B request struct to perform the equivalent task. With the same 64KB memory footprint an asynchronous delegation client can hold 1024 pending requests in addition to the requests-in-flight on the server's request line. 
+The change in API allows asynchronous delegation to completely remove \textit{libfiber}, the agent of client side concurrency in \textit{Gepard}, along with \textit{libfiber's} associated memory and computation overhead. \textit{Gepard} fiber managers keep track of a fiber's state which includes its call stack and instruction pointer. In contrast, asynchronous delegation tracks a client's request leaving the restoration of state to the callback function. By a combination of memory footprint and compuation overhead in contexting switching, \textit{Gepard's} throughput peaks at 64 fibers / thread. On the other hand, we show asynchronous delegation efficiently tracks well over 1,000 concurrent, outstanding pending requests in our benchmarks. 
 
 The reserve of pending requests is available because calls to \textbf{Delegate\_Async()} are non-blocking for most invocations. The client function can continue to generate requests while interaction with the delegation server is deferred until the most optimal time depending on the delegation strategy. 
 
 In this chapter we explore the opportunities that this explosion of available requests provides to increase concurrency in asynchronous delegation with one or more dedicated server threads. Later, we show how asynchronous operation can be applied to flat delegation, a more recent, serverless design. 
+
+Figures in this chapter are generated with variations of a fetch and add benchmark. In this benchmark (1ea) 64B, variable is allocated for each delegation server in the system. For a period of three seconds, clients select a server at random and delegate an increment function to the server. The function increments the server's variable and returns. There is no callback. Results shown are the harmonic mean of ten samples. Unless otherwise stated, asynchronous delegation is configured with 16 request lines per client - server pair and a 32 length pending request queue for each server.  
 
 \section{Asynchronous Dedicated Delegation}
 \begin{figure}[ht!]
@@ -247,15 +238,15 @@ In this chapter we explore the opportunities that this explosion of available re
 \label{fig:dedicated_delegation}
 \end{figure}
 
-~\ref{fig:dedicated_delegation} demonstrates an asynchronous dedicated delegation system with 1 client and 3 servers. The client generates requests and places them in the fixed-length request queue for the required server. When any of the queues reaches capacity, the client will suspend request generation and begin the process of writing out requests to servers. The client polls its response lines one by one, executing the callback function if provided. If a response was present a request is popped from the request queue and placed in the corresponding request line. After all response-request lines have been handled \textbf{Delegate\_Async()} returns. 
+~\ref{fig:dedicated_delegation} sketches an asynchronous dedicated delegation system with 1 client and 3 servers. The client generates requests and places them in the fixed-length request queue for the required server. When any of the queues reaches capacity, the client suspends request generation and begins the process of writing out requests to servers. The client polls its response lines one by one, executing the callback function if provided. When a response is present a request is popped from the request queue and placed in the corresponding request line. After all response-request lines have been handled \textbf{Delegate\_Async()} returns. 
 
 To use asynchronous dedicated delegation as shown in ~\ref{fig:dedicated_delegation}, the user first initializes a number of delegation servers using \textbf{Launch\_Servers}. Running on separate OS threads, the servers begin sequentially polling their request lines. The user then launches OS threads with the application code by calling \textbf{Client\_Thread\_Create}. The thread launched by \textbf{Client\_Thread\_Create} first initializes an empty queue of pending requests for each running server on the NUMA node which the client thread is assigned. After queue initialization the thread invokes the client function. 
 
-Within the client function the programmer uses \textbf{Delegate\_Async} to delegate the request. Typically \textbf{Delegate\_Async} will enqueue the request locally and then return to the client function. However, when any of the pending request queues is filled, the client iterates through its entire array of responses. If a response is ready, the client invokes the callback with the corresponding return value, and then writes a new request to the corresponding request line in the pending request queue. 
+Within the client function the programmer uses \textbf{Delegate\_Async} to delegate the request. Typically \textbf{Delegate\_Async} will enqueue the request locally and then return to the client function. However, a push to the pending request will fail when the queue is full. At this time the client iterates through its entire array of responses. If a response is ready, the client invokes the callback with the corresponding return value, and then writes a new request, popped from the appropriate pending request queue, to the corresponding request line. 
 
 At any time the user can call \textbf{Async\_Barrier} to ensure that all pending requests are served before moving on.  \textbf{Async\_Barrier} is always called after the return of the client function and before joining the client thread. 
 
-\subsection{Hurry Up and Wait - The Pending Request Queue}
+\subsection{Hurry Up and Wait - The Pending Request Queue} \label{pr}
 \begin{figure}[ht!]
 \centering
 \includegraphics[width=0.9\columnwidth]{FIG/queue_v_no_queue.pdf}
@@ -263,11 +254,11 @@ At any time the user can call \textbf{Async\_Barrier} to ensure that all pending
 \label{fig:queue_v_no_queue}
 \end{figure}
 
-A feature of the asynchronous API is the ability to cache requests until the client is ready to write them out to the server. Running client application code for contiguous periods of time, as opposed to breaking to write requests and read responses, should provide some benefit of temporal locality. The benefit should also apply when writing requests to the server as a batch rather than individually. 
+A counter-intuitive feature of the asynchronous API is the ability to hold a large number of pending requests in reserve until the optimal time to write them to the server. One might expect writing requests as quickly as possible to a constantly cycling server would yield the maximum throughput. However, \ref{fig:queue_v_no_queue} provides empirical evidence the reserve has a profound impact on overall system throughput. 
 
-The performance advantage of the pending request queue is evident in ~\ref{fig:queue_v_no_queue}. \ref{fig:queue_v_no_queue} shows the same fetch and add experiment as  \ref{client and server production rates}, however this time the throughput of an asynchronous dedicated delegation configuration with a 32-length pending request queue is plotted against the throughput of a system configured with direct writes to a server's request line. The client keeps track of the last request line written. When a call to \textbf{Delegate\_Async()} is made the client attempts a write to the next request line. If the line is unavailable \textbf{Delegate\_Async()} tries the write repeatedly until it is successful. Although direct request line write shows a respectable peak throughput, its rapid degradation in performance is undesirable. 
+The experiment shown in \ref{fig:queue_v_no_queue} plots the throughput of our benchmark with a reserve queue and an asynchronous dedicated delegation configuration with direct writes to the server's request line. The direct write program tracks the index of the last request written to each server, writing its current request to the next available index. If the next index is not available the program polls the response line until it is available. Although direct write achieves comparable server consumption rate to the program with pending request reserve, it shows undesirable degradation in performance when the number of clients bounds the throughput of the system. 
 
-We move forward with implementing the request reserve as an array of pending request queues. For each client, a FIFO queue of fixed length, implemented as a circular buffer, is allocated for each server. Each call to \textbf{Delegate\_Async()} attempts to push a request onto the queue. When a push request fails, \textbf{Delegate\_Async()} iterates through its response and request lines, calling the callback on responses if provided and writing requests from the pending request queue to the server if available. 
+We implement the request reserve as an array of pending request queues. For each client, a FIFO queue of fixed length, implemented as a circular buffer, is allocated for each server. Each call to \textbf{Delegate\_Async()} attempts to push a request onto the queue. When a push request fails, \textbf{Delegate\_Async()} iterates through its response and request lines, calling the callback on responses and writing requests from the pending request queue to the server if available. 
 
 \begin{figure}[ht!]
 \centering
@@ -279,20 +270,31 @@ We move forward with implementing the request reserve as an array of pending req
 \begin{figure}[ht!]
 \centering
 \includegraphics[width=0.9\columnwidth]{FIG/16rldedicated_saturation.pdf}
-\caption{Latency, Server Saturation, Response Readiness, and Failed Queue Pops by queue length.}
+\caption{16 Request Line Configuration: Latency, Server Saturation, Response Readiness, and Failed Queue Pops by queue length.}
 \label{fig:saturation16RL}
 \end{figure}
 
-From ~\ref{fig:dedicated_vary_queue} we see that the length of the pending request queue has a clear impact on overall throughput. ~\ref{fig:dedicated_vary_queue} shows our familiar benchmark plotted with various pending request queue lengths. The marginal return on throughput for longer queue lengths diminishes after length 32, or $2 * N_{request lines}$. For more insight into this, we reference ~\ref{fig:saturation16RL}, which shows the saturation of the server, or rate of ready requests to request line reads against the queue length for a system running the same benchmark with 16 servers and 40 clients. Server saturation increases with the extension of the pending request queue, meaning the servers are simply doing more work with fewer reads. 
+\begin{figure}[ht!]
+\centering
+\includegraphics[width=0.9\columnwidth]{FIG/8rldedicated_saturation.pdf}
+\caption{8 Request Line Configuration: Latency, Server Saturation, Response Readiness, and Failed Queue Pops by queue length.}
+\label{fig:saturation8RL}
+\end{figure}
 
-~\ref{fig:saturation16RL} also provides insight into the relationship between the pending request queue length and overall throughput shown in ~\ref{fig:dedicated_vary_queue}. \textbf{Delegate\_Async()} blocks to read responses and write requests whenever a push to any of its request queues fails. Ideally, \textbf{Delegate\_Async()} should block at a frequency slow enough that servers have had time to execute the outstanding responses and cache many requests to write concurrently but fast enough that responses do not age on the response line. 
+\begin{figure}[ht!]
+\centering
+\includegraphics[width=0.9\columnwidth]{FIG/4rldedicated_saturation.pdf}
+\caption{4 Request Line Configuration: Latency, Server Saturation, Response Readiness, and Failed Queue Pops by queue length.}
+\label{fig:saturation4RL}
+\end{figure}
 
-The probability that \textbf{Delegate\_Async()} will block with slower frequency increases with the length of the request queue. The probability, P, that a system with S queues of length L will block after L total requests follows $ P = \frac{S}{L^{S}} $. Clearly the probability of stopping after L total requests drops rapidly as the queue length increases. Intuitively, this also provides the opportunity for requests to be cached across a range of servers. When the queue is sufficiently long and there is diversity in requests, we have a good probability that each queue will hold requests to fill all the request lines when \textbf{Delegate\_Async()} blocks. 
+How long should the individual pending request queues be? From~\ref{fig:dedicated_vary_queue} we see that the length of the pending request queue has a clear impact on overall throughput. ~\ref{fig:dedicated_vary_queue} shows our familiar benchmark plotted with various pending request queue lengths from length 2 to length 64 on a asynchronous dedicated delegation configured with 16 request lines. 2 - 8 length queues exhibit poor performance because queues smaller than the number of request lines are unable to utilize the entire capacity of the server. 
 
-~\ref{fig:saturation16RL} confirms all of the above desirable traits of the queue length. As the queue length increases, the proportion of failed queue pop operations plummets. The increased period between response line polls also results in higher response availability. Server saturation also rises as the queue length increases. After increasing pending request queue length to double the number of request lines, however, the benefits of the longer queue begin to erode. This is shown by the 64 length queue in ~\ref{fig:dedicated_vary_queue}. When the queue is too long it acts like a reservoir, impounding requests for a longer period of time without impacting the throughput of the system. This is shown in \ref{fig:saturation16RL} by the increase in individual request latency as the queue length increases and increase in throughput stagnates. 
+Interestingly,~\ref{fig:dedicated_vary_queue} shows that queue lengths greater than or equal to 16 show the same client consumption rate when the system is bound by server capacity; suggesting higher server saturation increases server throughput.  This relationship is confirmed by \ref{fig:saturation16RL}. \ref{fig:saturation16RL} plots throughput, server saturation, response ready rate, proportion of failed pending request queue pop operations, and average request latency with our microbenchmark using 16 servers and 40 clients. We see that peak system throughput is correlated with peak server saturation. 
 
-As a rule of thumb, we set the pending request queue to double the amount of request lines per client - server pair. This configuration provides high throughput while leaving cache available for delegated data structures. 
+From \ref{fig:dedicated_vary_queue} we also observe the marginal return on throughput for longer queue lengths diminishes after length 32, or $2 * N_{request lines}$. For more insight into this, we again reference ~\ref{fig:saturation16RL}. Server saturation increases and failed queue pop instances decrease with the extension of the pending request queue. At roughly $2 * N_{request lines}$ the gains cease. This finding suggests that the probability of having enough requests in all queues to fill all request lines approaches 1 somewhere near $2 * N_{request lines}$. \ref{fig:saturation8RL} and \ref{fig:saturation4RL} plot the same experiment configured with 8 and 4 request line servers respectively. Both support the $2 * N_{request lines}$ hypothesis. 
 
+Based on these results, we set the pending request queue to double the amount of request lines per client - server pair. This configuration provides high throughput while leaving cache available for delegated data structures. 
 
 \subsection{More Concurrency with Request Lines}
 
@@ -303,9 +305,13 @@ As a rule of thumb, we set the pending request queue to double the amount of req
 \label{fig:dedicated_thput_by_rl}
 \end{figure}
 
-Correlated to the length of the queue is the number of request lines servers allocate for the client. \textit{Gepard} as tested in ~\ref{Ch 3} is configured with 4 request lines per client. \textit{Gepard}, however, manages far fewer concurrent request due to the overhead of the fiber library. As shown in \ref{pending request} The larger reserve of pending requests in asynchronous dedicated delegation provides the capability to fill the request lines more completely when requests are posted. It follows that the reserve would enables a greater number of request lines to be used equally as as effectively. 
+Correlated to the length of the queue is the number of request and response lines used to pass messages between clients and servers. \textit{Gepard} as tested in ~\autoref{eval} is configured with 4 request lines per client. \textit{Gepard}, however, manages far fewer concurrent requests due to the overhead of the fiber library. The increased rate of  request production in asynchronous dedicated delegation provides the opportunity to experiment with writing more concurrent to requests to the servers. 
 
-~\ref{fig:dedicated_thput_by_rl} shows the measured system throughput for the same benchmark described as the fast server in ~\ref{Client and Server Production Rates} with throughput plotted against the number of request lines per server-client pair. ~\ref{fig:dedicated_thput_by_rl} shows that increasing the number of request line generally increases the throughput until about 16 request lines when performance degrades. Due to this observation we use 16 request lines for the rest of our experiments. 
+~\ref{fig:dedicated_thput_by_rl} shows the measured system throughput for our benchmark with throughput plotted against the number of request lines per server-client pair. ~\ref{fig:dedicated_thput_by_rl} shows that increasing the number of request line generally increases the throughput until about 16 request lines when performance degrades. 
+
+Do I know why?
+
+Due to this observation we use 16 request lines for the rest of our experiments. 
 
 \subsection{Client and Server Production Rates}
 \begin{figure}[ht!]
@@ -319,17 +325,14 @@ A feature of dedicated delegation is the ability to select the number of clients
 
 ~\ref{eq:throughput} describes this rule of thumb, Where Thput\textsubscript{system} is the throughput of the entire system in MOPS, Thput\textsubscript{component} is the throughput of an individual component in MOPS, and N\textsubscript{component} is the number of that component in the system. As $Thput_{server}$ decreases, $N_{server}$ must increase to compensate until it reaches equilibrium with $N_{client} * Thput_{client}$. 
 
-\begin{displaymath}
+\begin{equation}
 Thput_{system} = \min(N_{server} * Thput_{server}, N_{client} * Thput_{client})
 \label{eq:throughput}
-\end{displaymath}
+\end{equation}
 
- ~\ref{fig:slow_server} displays results of an experiment where we compare the throughput by number of servers of a faster (addition) and slower (sqrt) delegated function. For the faster function a client selects a server at random and delegates a function to increment a counter on that server. For the slower delegated function the server delegates an increment and a square root calculation. In the regions left of peak throughput shown in  ~\ref{fig:slow_server} the system is bound by server capacity. The upward slope corresponds to the consumption rate of an individual server, or Thput\textsubscript{server}. Conversely, in the region to the right of peak throughput the system is bound by client production. The downward slope corresponds to the Thput\textsubscript{client}. 
+ ~\ref{fig:slow_server} displays results of an experiment where we compare the throughput by number of servers of a faster (addition) and slower (sqrt) delegated function for our benchmark. In the regions left of peak throughput shown in  ~\ref{fig:slow_server} the system is bound by server capacity. The upward slope corresponds to the consumption rate of an individual server, or Thput\textsubscript{server}. Conversely, in the region to the right of the equilibrium point the system is bound by client production. The downward slope corresponds to the Thput\textsubscript{client}. 
 
 ~\ref{fig:slow_server} shows ~\ref{eq:throughput} to be a good model. Consumption rate slows for the server performing a more time consuming delegated function. The slower $Thput_{server}$ requires more $N_{server}$ to balance the total throughput of the clients. The peak throughput, or equilibrium point, requires more servers for the slow function than it does for the faster one, suggesting that programmers should increase the number of servers when the delegated function is more computationally intense. 
-
-
-
 
 \section{Asynchronous Flat Delegation}
 \begin{figure}[ht!]
@@ -343,7 +346,7 @@ Flat delegation combines the client and server roles of dedicated delegation int
 
 Since flat delegation does not launch dedicated server threads there is no call to \textbf{Launch\_Servers}. Besides this difference the API remains the same as dedicated delegation. 
 
-Although the API for asynchronous flat delegation remains the same, within \textbf{Delegate\_Async()} the client must determine when to invoke the server function in addition to caching and writing out requests. Flat delegation servers run periodically as determined by the scheduling policy instead of continuously as they do in the dedicated approach. Because of this key difference, we continued to experiment with writing requests to servers directly as described in \ref{More Concurrency with Request Lines} which enabled us to try a handful of strategies for invoking the server function. 
+Although the API for asynchronous flat delegation remains the same, within \textbf{Delegate\_Async()} the client must determine when to invoke the server function in addition to writing out requests. Flat delegation servers run periodically as determined by the scheduling policy instead of continuously as they do in the dedicated approach. We continued to experiment with writing requests directly to the servers as described \S\ref{pr} because of the periodic server invocation.
 
 \subsection{Scheduling Strategies for Asynchronous Flat Delegation}  
 
@@ -368,48 +371,48 @@ Although the API for asynchronous flat delegation remains the same, within \text
 \label{fig:flat_latency_28}
 \end{figure}
 
-~\ref{fig:flat_delegation_strategy} summarizes the throughput for the asynchronous flat delegation scheduling strategies tested on the same fetch and add benchmark as \ref{Asynchronous Dedicated Delegation}. The independent variable, however represents the total number of threads running, e.g. 20 means there are 20 threads running as both client and server. The parameters for each are described in the following paragraphs. The server function is the same server function as Asynchronous Dedicated Delegation and \textit{Gepard} except it iterates through its request lines once and then returns. 
+~\ref{fig:flat_delegation_strategy} summarizes the throughput for the asynchronous flat delegation scheduling strategies tested on our benchmark. The independent variable, however represents the total number of threads running, e.g., at 20 there are 20 threads running as both client and server. The parameters for each are described in the following paragraphs. The server function is the same server function as Asynchronous Dedicated Delegation and \textit{Gepard} except it iterates through its request lines once and then returns. 
 
 Caching requests for batch write continues to be the highest throughput (\textit{queue}), however direct request line write (\textit{blocked}) shows comparable performance for higher numbers of threads. 
 
-~\ref{fig:flat_latency_56} and ~\ref{fig:flat_latency_28} show the average latency in clock cycles and proportion response ready when polled by delegation strategy. The Direct Write Serve When Blocked strategy shows minimum average request latency. 
+~\ref{fig:flat_latency_56} and ~\ref{fig:flat_latency_28} show the average latency in clock cycles and proportion response ready when polled by delegation strategy. The Direct Write Serve When Blocked strategy shows minimum average request latency. We should note that average request latency is on the order of 10 times greater for asynchronous flat delegation than it is for asynchronous dedicated delegation shown in ~\ref{fig:saturation16RL} . 
 
 The following subsections provide more detail on the request writing and server invocation strategies. 
 
 \subsubsection{Pending Request Queue}
 
-Shown as \textit{queue} in ~\ref{fig:flat_delegation_strategy} pending request queue is the same as direct delegation described in ~\ref{Asynchronous Dedicated Delegation} but with the server function invoked prior to writing and reading request lines. This approach outperformed all others in our trial, and is the approach tested in \ref{Chapter 3}. 
+Shown as \textit{queue} in ~\ref{fig:flat_delegation_strategy} pending request queue is the same as direct delegation described in ~\autoref{pr} but with the server function invoked prior to writing and reading request lines. This approach outperformed all others in our trial, and is the approach tested in \autoref{eval}. 
 
 \subsubsection{Direct Write Serve When Blocked}
 
 Perhaps the simplest strategy for invoking the server function is upon a failed request issuance. After all, if the client is blocked waiting for a server to become available, the most useful thing it can do is invoke the server to handle others' requests. As shown in ~\ref{flat_delegation_strategy} \textit{blocked} shows comparable results to \textit{queue} for larger numbers of threads. \textit{Blocked} cuts down on delegation memory footprint because it eliminates the pending request queues. For larger systems, or systems with smaller amounts of on core cache \textit{blocked} may provide a way to better utilize the on core cache while maintaining higher throughput. 
 
- The \textit{blocked} strategy exhibits a desirable property shown in ~\ref{fig:flat_latency_56} and ~\ref{fig:flat_latency_28}. The latency for any individual request, from generation to execution of the callback function is 16.8\% lower for \textit{blocked} than \textit{queue}. 
+The \textit{blocked} strategy exhibits a desirable property shown in ~\ref{fig:flat_latency_56} and ~\ref{fig:flat_latency_28}. The latency for any individual request, from generation to execution of the callback function is up to 15.5\% lower for \textit{blocked} than \textit{queue}. 
 
 \subsubsection{Direct Write Fast Path, Greedy Client, Upper Bound, and Doorbell}
 A proposed optimization to the serve when blocked policy was to fast track requests to a server on the same thread as the client by invoking the delegated function directly. The unintended impact of this optimization was the \textit{greedy} client problem, which is caused by victim threads attempting to write requests to the full request lines of the greedy client. The victim threads operate in server mode until the request line becomes available. However, the request line never becomes available because the greedy client's requests continue to be served by the victim threads. The greedy client problem was avoided in \textit{blocked} strategy because the client was guaranteed to invoke the server function when writes to the request lines of its own server blocked. 
 
-To break the greedy client we experiment with an upper \textit{bound} on the client by invoking the server after a fixed number of calls to \textbf{Delegate\_Async()}. We also implement the \textit{doorbell} strategy. When a client blocks on an unavailable request line it "rings the doorbell" of the required thread by writing a 1 to its doorbell variable. Clients check their doorbell during each call to \textbf{Delegate\_Async} and invoke the server, resetting the doorbell to zero after a run of the server loop.
+To break the greedy client we experiment with an upper \textit{bound} on the client by invoking the server after a fixed number of calls to \textbf{Delegate\_Async()}. We also implement the \textit{doorbell} strategy. When a client blocks on an unavailable request line it "rings the doorbell" of the required thread by writing a 1 to its doorbell variable. Clients check their doorbell during each call to \textbf{Delegate\_Async} and invoke the server, resetting the doorbell to zero after a run of the server loop. The doorbell approach measures the highest average request latency, likely due to the latency of writing the doorbell message to a remote thread. 
 
 \section{Ordering Guarantees}
 \begin{figure}[ht!]
 \centering
 \includegraphics[width=0.9\columnwidth]{FIG/multiple_rl_race.png}
 \caption{The server may execute requests out of order when multiple requests lines are used by one client. (1.) The client issues 3 requests before the server reaches its section of the request line array. (2.) The server handles all requests in this clients section before the client writes a fourth request. (3.) The client writes its next request into the next available line, after request 4 is written the next line is the first one. The requests are now executed out of order.}
-\label{fig:mulitple_rl_race}
+\label{fig:multiple_rl_race}
 \end{figure}
 The asynchronous API provides no guarantee to the ordering of delegated functions. Delegated functions may be executed out of generation order when delegated to different servers because the servers are not synchronized with respect to each other. Even requests to the same server may be reordered as described below.  
 
-Servers handle requests by iterating through all of their request lines and performing those requests with the appropriate flag. However, when there are multiple request lines per server-client pair we cannot guarantee that the requests will be performed in the order they are sent. Consider the case shown in ~\ref{fig:multiple_rl_race}.  A client writes a request to all but one of its request lines before the server handles the entire batch. Afterward the client writes requests to its last request line and then begins writing new requests to its first request line. Since the server handles requests in the order of the request line array, newer requests are handled before the oldest request in the last position. 
+Servers handle requests by iterating through all of their request lines and performing those requests with the appropriate flag. However, when there are multiple request lines per server-client pair we cannot guarantee that the requests will be performed in the order they are sent. Consider the case shown in \ref{fig:multiple_rl_race}.  A client writes a request to all but one of its request lines before the server handles the entire batch. Afterward the client writes requests to its last request line and then begins writing new requests to its first request line. Since the server handles requests in the order of the request line array, newer requests are handled before the oldest request in the last position. 
 
-For an application with non-commutative properties, the programmer can take care to delegate the entire order critical section. It that is unfeasible, a single request line preserves the ordering of requests made by a client to a specific server. Experimental results are shown with both 1 and 16 request lines per client-server pair to show the difference in throughput while maintaining ordering. 
+For an application with non-commutative properties, the programmer can take care to delegate the entire order critical section. It that is unfeasible, a single request line preserves the ordering of requests made by a client to a specific server, albeit with detrimental impacts to overall throughput. Experimental results are shown with both 1 and 16 request lines per client-server pair to show the difference in throughput while maintaining ordering between delegated requests to the same server. 
 
-\chapter{Experimental Evaluation}
-The following results shown are from a 28 core, 56 thread Intel Skylake machine with 97 GB of RAM. The system has three levels of cache, 32KB of L1 cache and 1,024KB of L2 non-inclusive and shared between hyperthreads on the same core. Our machine has 19,712KB L3 cache per socked shared among the 14 physical cores. 
+\chapter{Experimental Evaluation} \label{eval}
+The results shown are from a 28 core, 56 thread Intel Skylake machine with 97 GB of RAM. The system has three levels of cache: On-core non-inclusive L1 and L2 of size 32KB and 1,024KB respectively, and 19,712KB of L3 cache per socket shared among the 14 physical cores on one processor. 
 
-For spin, mutex, atomic, and flat delegation we use the number of threads available on the machine (56) unless otherwise stated. For trials with dedicated delegation \textit{async} and \textit{gepard} we list the number of servers. The balance of remaining threads are clients.  
+For spin, mutex, atomic, and flat delegation we use the number of threads available on the machine (56) unless otherwise stated. For trials with dedicated delegation \textit{async} and \textit{Gepard} we list the number of servers. The balance of remaining threads are clients.  
 
-Like \textit{Gepard}, asynchronous delegation threads are assigned to cores in a round-robin fashion. In the dedicated case all server threads are launched before any client threads. Memory for delegated data structures is allocated on the NUMA node corresponding to the server which it is assigned. 
+Like \textit{Gepard}, asynchronous delegation threads are assigned to processors in a round-robin fashion. For example, on our machine threads 0-13 are on processor 0 and 14-23 are on processor 1. Threads are assigned in the order 0, 14, 1, 15, etc... In the dedicated case all server threads are launched before any client threads. Memory for delegated data structures is allocated on the NUMA node corresponding to the processor which it is assigned. 
 
 \section{Fetch and Add}
 \begin{figure}[ht!]
@@ -421,9 +424,11 @@ Like \textit{Gepard}, asynchronous delegation threads are assigned to cores in a
 
 The experiment shown in ~\ref{fig:fetch_and_add_thput} allocates a user specified number of 64B variables shown on the x-axis. OS threads are launched, and for three seconds each thread selects a variable at random and then increments that variable by its synchronization technique. After three seconds the threads are joined and the throughput in Million Operations per Second (MOPS) is reported. 
 
-The experiment was run with locking approaches, \textit{mutex} and \textit{spin}; atomic fetch and add (\textit{atomic}); and delegation approaches (\textit{Gepard}, \textit{async-16s}, and \textit{async-flat}). 
+The experiment is run using the POSIX threads implementations of \textit{mutex} and \textit{spin} locks, the gcc compiler intrinsic atomic fetch and add (\textit{atomic}), and delegation approaches (\textit{Gepard-8s}, \textit{async-16s}, and \textit{async-flat}). 
 
-The delegation approaches allocate memory as a two dimensional array, where the rows are the array dedicated to the individual server thread. \textbf{numa\_alloc\_onnode} is used to allocate the delegated data structures into dram local to the intended server's core. For flat delegation the number of shared variables is rounded up to the next highest multiple of the number of servers. For example 128 variables is rounded up to 168. For dedicated approaches when the number of shared variables is smaller than the requested number of servers the number of servers is reduced. For example a 16 server dedicated system handling 4 shared variables will run with 4 servers and 52 clients. 
+The delegation approaches allocate memory as a two dimensional array, where the rows of the array are assigned to the individual server thread. \textbf{numa\_alloc\_onnode} is used to allocate the delegated data structures into dram local to the intended server's core's processor. E.g., server 1 is assigned to core 14 on processor 1, NUMA node 1. 
+
+For flat delegation the number of shared variables is rounded up to the next highest multiple of the number of servers. For example 128 variables is rounded up to 168. For dedicated approaches when the number of shared variables is smaller than the requested number of servers the number of servers is reduced. For example a 16 server dedicated system handling 4 shared variables will run with 4 servers and 52 clients. 
 
 The atomic and locking approaches allocate memory using \textbf{malloc} as a single array. 
 
@@ -431,11 +436,11 @@ The atomic and locking approaches allocate memory using \textbf{malloc} as a sin
 
 Delegation approaches excel for smaller numbers of shared variables. Notice dedicated delegation achieves over 600 MOPS for shared variable counts up to the size of the server cache. Flat delegation achieves consistent performance, topping out just under 500 MOPS. The reason for this even performance at low levels of shared variables is a lack of contention.
 
-A variable is contended if multiple threads are trying to access it simultaneously. The chance that at least one pair of threads in the system is contending for a variable is plotted in ~\ref{fig:contention} and described by $C = 1 - {{ V \choose T }  \over  V^{T}}$, where C is the probability of contention, V is total number of shared variables, and T is the number of threads. Of course the probability that all threads are contending is less than or equal to the probability that just one pair of threads are contending. We can see that the atomic and locking approaches do not reach peak throughput until after the probability of contention becomes trivial, near 2\textsuperscript{15} shared variables. 
+A variable is contended if multiple threads are trying to access it simultaneously. By the pigeonhole principle, we can be guaranteed that when the number of shared variables is less than the number of threads that the number of threads contending for variables is at least $ 2 * (T - V) $ where  V is total number of shared variables, and T is the number of threads. The impact of the contention is evident for the locking and atomic approaches, which demonstrate consistently low throughput until the number of shared variables increases beyond the number of threads. The probability of contention wanes as the number of variables grows. The chance that at least one pair of threads in the system is contending for a variable is described by $C = 1 - {{ V \choose T }  \over  V^{T}}$ where C is the probability of contention. C drops below 10\% at $2^{14}$ and is practically zero at $2^{19}$, which corresponds with the peak throughput of of the locking and atomic approaches. 
+ 
+An advantage of delegation approaches, previously shown by \textit{Gepard}, is the lack of contention for variables. \ref{fig:fetch_and_add_thput} shows that asynchronous approaches meet or exceed the throughput gains made by \textit{Gepard} for small numbers of variables. 
 
-The fine grained locks and the atomic fetch and add have up to 56 threads accessing a single memory location. ~\ref{fig:fetch_and_add_thput} shows the atomic fetch and add and the fine grained locks reach peak performance as the probability of contention reaches 0 ~\ref{fig:contention}. 
-
-In contrast, the delegation approaches, by design, have no contention for variables. When the number of shared variables is sufficiently small, the entire data set may be kept in a core's L1 and L2 cache. For the 16 server dedicated delegation case shown, each delegation server shares, as a hyperthread, a core with a delegation client. The combined overhead of the two threads is about 93 KB. This amount consumes the entire L1 cache and 62 KB of the L2. This leaves 962 KB of L2 cache for data. 960 KB translates to 15,000 variables per server, or 246,000 variables for the system. L2 cache should be exhausted at 2\textsuperscript{18} variables, which is where we see the performance begin to degrade. 
+Interestingly, asynchronous dedicated delegation outperforms all approaches on the benchmark up to $2^{20}$ shared variables. This is no accident, when the delegated data structure is sufficiently small, it remains entirely resident in the server's on-core cache. For the 16 server dedicated delegation case shown, each delegation server shares, as a hyperthread, a core with a delegation client. The combined memory overhead of delegation for the two threads is about 93 KB. This amount consumes the entire L1 cache and 62 KB of the L2 leaving 962 KB of L2 cache for the delegated data structure. 960 KB translates to (15,000) 64B variables per server, or 246,000 variables for the system. L2 cache is exhausted at 2\textsuperscript{18} variables, which is where \ref{fig:fetch_and_add_thput} shows degradation of asynchronous dedicated delegation throughput performance. 
 
 Further, the portion of L3 cache available to the server is roughly $1 / N_{servers on processor}$ of the L3 on the processor, or 2,464 KB. This translates to 39,000 additional variables per server, or 630,000 more variables for the system. L3 is exhausted when the number of shared variables approaches 2\textsuperscript{20}. Performance continues to degrade as the number of variables resident in DRAM increases and the likelihood of cache hits decreases. 
 
@@ -449,7 +454,6 @@ Further, the portion of L3 cache available to the server is roughly $1 / N_{serv
 \caption{Throughput by Shared Variables by Number of Dedicated Servers}
 \label{fig:vary_server}
 \end{figure}
-
 
 A common theme across all approaches is the degradation of performance beginning around 2\textsuperscript{20} shared variables. Due to the randomness in the benchmark, the probability that an approach will be reading from DRAM nears 1 as the number of shared variables increases. The probability, P  that a variable picked at random in a system with cache size $S_{cache}$, variable size $S_{variable}$, total number of variables $N_{variables}$ is $P = {{S_{cache} / S_{variable}} \over N_{variables}}$. As the probability that a variable is in cache approaches zero the time to access DRAM dominates the performance of the delegation server.
 
