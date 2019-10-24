@@ -455,23 +455,35 @@ Further, the portion of L3 cache available to the server is roughly $1 / N_{serv
 \label{fig:vary_server}
 \end{figure}
 
-A common theme across all approaches is the degradation of performance beginning around 2\textsuperscript{20} shared variables. Due to the randomness in the benchmark, the probability that an approach will be reading from DRAM nears 1 as the number of shared variables increases. The probability, P  that a variable picked at random in a system with cache size $S_{cache}$, variable size $S_{variable}$, total number of variables $N_{variables}$ is $P = {{S_{cache} / S_{variable}} \over N_{variables}}$. As the probability that a variable is in cache approaches zero the time to access DRAM dominates the performance of the delegation server.
+All approaches display a reduction in throughput beginning around 2\textsuperscript{20} shared variables. This is because the likelihood a shared variable will be in cache decreases as the number of shared variables increases. Because of the randomness in the benchmark, we can estimate the probability that a shared variable will be DRAM resident. The probability, P  that a variable picked at random in a system with cache size $S_{cache}$, variable size $S_{variable}$, total number of variables $N_{variables}$ follows \ref{eq:ram}
 
-Much slower access to DRAM dominates the performance of all approaches in this region, however the degradation in performance is particularly extreme for dedicated delegation because accesses are made by a smaller subset of cores. ~\ref{fig:vary_server} shows as the number of server cores increases the tail performance of dedicated delegation improves. In ~\ref{fig:ram_loads} we measure the number of loads from RAM for flat delegation vs a 16 server dedicated delegation and observe that the total number of ram loads for dedicated remains below those for flat though the RAM loads per operation scales throughout the range.  
+\begin{equation}
+P = {{S_{cache} / S_{variable}} \over N_{variables}}
+\label{eq:ram}
+\end{equation}
+
+Since $S_{cache}$ is a fixed property of the hardware, we see the probability that a variable is in cache approaches zero with an increasing number of shared variables. 
+
+Much slower access to DRAM dominates the performance of all approaches as the number of shared variables grows beyond $2^{20}$. For dedicated delegation the degradation in performance is particularly extreme, because accesses are made by a smaller subset of cores. This observation is substantiated by ~\ref{fig:vary_server}, which shows that tail throughput rises with the number of delegation servers. Cross referencing \ref{fig:fetch_and_add_thput}, we see that the 32 server asynchronous dedicated delegation and flat delegation shown in \ref{fig:vary_server} achieve nearly the same throughput as the locking and atomic approaches on our benchmark. 
 
 \begin{figure}[ht!]
 \centering
-\includegraphics[width=0.9\columnwidth]{FIG/ram_accesses_by_type.pdf}
+\includegraphics[width=0.9\columnwidth]{FIG/ram_accesses_per_op.pdf}
 \caption{Delegation loads from RAM}
 \label{fig:ram_loads}
 \end{figure}
 
-In a similar vein, a strength of flat delegation is its ability to utilize every core in the machine for DRAM access. Flat delegation also benefits from the lower cycle time for an on NUMA Node DRAM access. In comparison, the locking approaches will have a $1:N_textsubscript{NUMA Nodes} $ probability of accessing a variable at random that is addressed on the same node as the core. 
+Our final observation of flat and high server count delegation systems provides motivation to continue optimizing the systems for use in large delegated data structures. We delegate data structures onto the same NUMA node in which the server thread is running. As a result delegation servers will access NUMA local dram for 100\% of delegated operations. In comparison, a data structure with synchronized access through locks or atomic operations will have a $1/N_{nodes}$ chance of performing a local operation where $N_{nodes}$ is the number of NUMA nodes in the system. 
+
+We can observe the NUMA effect in ~\ref{fig:ram_loads} where local and remote DRAM loads were measured using  \texttt{perf stat} for dedicated delegation in blue, flat delegation in black, and mutex locks in red. Local DRAM loads have filled in pips while remote loads are outlined. We observe in \ref{fig:ram_loads} a wide separation between remote and local DRAM loads per operation for delegation approaches. As expected, mutex shows a balance much closer to an even split between nodes. 
 
 
 \chapter{Conclusions}
-We have shown that asynchronous delegation approaches outperform the synchronous delegation approach of \textit{Gepard} on the fetch and add benchmark.  Further, asynchronous delegation can outperform fine-grained locking or atomic approaches when the delegated data structure fits within the server core's cache. Interestingly, flat delegation shows comparable performance to atomic and locking approaches as the size of the delegated data structure exceeds the size of the available cache. 
+We have shown that asynchronous delegation approaches outperform the synchronous delegation approach of \textit{Gepard} on the fetch and add benchmark. Further, asynchronous delegation is shown to outperform fine-grained locking and atomic approaches when the delegated data structure fits within the delegation server thread's on-core cache. Interestingly, flat delegation shows comparable performance to atomic and locking approaches as the size of the delegated data structure exceeds the size of the available cache. 
 
+Opportunities for continuing work remain. The performance of asynchronous delegation should be measured on a variety of microbenchmarks to confirm these initial findings. Asynchronous delegation should also be ported into a real world application and its impact on performance measured. 
+
+Flat delegation shows promise to equal or outperform synchronization approaches throughout the range of shared variables. More research is necessary on the strategy for invoking the server function on a flat delegation thread with the goal of finding an equilibrium between client and server functions that maximizes overall throughput. 
 
 
 %\chapter{Some other stuff I wrote but probably shouldn't be included}
