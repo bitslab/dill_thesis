@@ -40,7 +40,7 @@
 \usepackage{slashbox,booktabs,amsmath}
 %\usepackage{todonotes}
 \usepackage{cite}
-
+\usepackage{url}
 \usepackage{xspace}
 
 \hyphenation{PageRank Convex dictatorship Dic-ta-tor-ship}
@@ -123,9 +123,14 @@
 
 
  \acknowledgements
-{The thesis has been completed... (INSERT YOUR TEXTS)\\ 
+{This work is possible because of those who led the way in developing our delegation paradigm. I'm especially grateful to Dr. Jakob Eriksson for his mentorship and creative ideas. I'd also like to thank Dr. Sepideh Roghanchi for developing the delegation code base and for putting up with my endless technical questions. 
 
-\begin{flushright}YOUR INITIAL\end{flushright}}
+I also greatly appreciate the many professors and colleagues I've worked with at the University of Illinois at Chicago who helped me build the knowledge base to make this work possible. 
+
+Thanks to my wife, Korena Dill, who supported me personally throughout this entire process. 
+\\ 
+
+\begin{flushright}GAD\end{flushright}}
 % \acknowledgements
 % {I want to ``thank'' my committee, without whose ridiculous demands, I
 % would have graduated so, so, very much faster.}
@@ -184,7 +189,7 @@ A mutex lock works by 'claiming' a variable using an atomic instruction like LOC
 \caption{A delegation system with 3 clients and 3 servers. The foreground client makes a request to all three servers. }
 \label{fig:general_delegation}
 \end{figure}
-Delegation, as described by Roghanchi et. al. in \textit{FFWD}\cite{FFWD}, grants exclusive control of a data structure to a single thread called a \textit{server}. \textit{Client} threads delegate operations on data structures to the appropriate \textit{server} by passing a message called a request. The \textit{server} is one thread, performing one operation at a time. The delegated operations are serialized and the data race eliminated. 
+Delegation, as described by Roghanchi et. al. in \textit{FFWD}\cite{ffwd}, grants exclusive control of a data structure to a single thread called a \textit{server}. \textit{Client} threads delegate operations on data structures to the appropriate \textit{server} by passing a message called a request. The \textit{server} is one thread, performing one operation at a time. The delegated operations are serialized and the data race eliminated. 
 
 In \textit{FFWD} style delegation, servers receive requests to perform an operation on their memory from \textit{clients} via a 64 Byte struct containing a function pointer, up to 6 arguments, and a status flag. Similarly, responses are communicated via a 16 Byte struct containing a return value and a status flag.  
 
