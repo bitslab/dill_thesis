@@ -152,17 +152,13 @@ Thanks to my wife, Korena Dill, who supported me personally throughout this enti
     \setlength{\leftmargin}{1.5in}
     \setlength{\labelsep}{.5in}
     \setlength{\rightmargin}{\leftmargin}}
-\item[AMS\hfill] American Mathematical Society
 \item[CPU\hfill] Central Processing Unit
-\item[CTAN\hfill] Comprehensive \TeX\ Archive Network
 \item[FFWD\hfill] Fast, Flyweight Delegation
 \item[FIFO\hfill] First In First Out
 \item[KB\hfill]  $2^{10}$ Bytes
 \item[MOPS\hfill] Million Operations per Second
 \item[NUMA\hfill] Non Uniform Memory Access
-\item[TUG\hfill] \TeX\ Users Group
 \item[UIC\hfill] University of Illinois at Chicago
-\item[UICTHESI\hfill] Thesis formatting system for use at UIC.
 \end{list}
  
 \summary
@@ -189,7 +185,7 @@ A mutex lock works by 'claiming' a variable using an atomic instruction like LOC
 \caption{A delegation system with 3 clients and 3 servers. The foreground client makes a request to all three servers. }
 \label{fig:general_delegation}
 \end{figure}
-Delegation, as described by Roghanchi et. al. in \textit{FFWD}\cite{ffwd}, grants exclusive control of a data structure to a single thread called a \textit{server}. \textit{Client} threads delegate operations on data structures to the appropriate \textit{server} by passing a message called a request. The \textit{server} is one thread, performing one operation at a time. The delegated operations are serialized and the data race eliminated. 
+Delegation, as described by Roghanchi et al.\ in \textit{FFWD}\cite{ffwd}, grants exclusive control of a data structure to a single thread called a \textit{server}. \textit{Client} threads delegate operations on data structures to the appropriate \textit{server} by passing a message called a request. The \textit{server} is one thread, performing one operation at a time. The delegated operations are serialized and the data race eliminated. 
 
 In \textit{FFWD} style delegation, servers receive requests to perform an operation on their memory from \textit{clients} via a 64 Byte struct containing a function pointer, up to 6 arguments, and a status flag. Similarly, responses are communicated via a 16 Byte struct containing a return value and a status flag.  
 
@@ -473,7 +469,7 @@ Much slower access to DRAM dominates the performance of all approaches as the nu
 \begin{figure}[ht!]
 \centering
 \includegraphics[width=0.9\columnwidth]{FIG/ram_accesses_per_op.pdf}
-\caption{Delegation loads from RAM}
+\caption{Delegation loads from NUMA remote or local DRAM per Operation}
 \label{fig:ram_loads}
 \end{figure}
 
@@ -620,20 +616,18 @@ Flat delegation shows promise to equal or outperform synchronization approaches 
    \end{center}
    \end{large}
 \begin{tabular}{p{2.8cm}p{10.5cm}}
-NAME: & NAME LASTNAME  \\ 
+NAME: & George Dill  \\ 
     &\\
-EDUCATION:  &Ph.D., Computer Science, University of Illinois at Chicago, Chicago, Illinois, 2018. \\  
+EDUCATION:  &M.Sc., Computer Science, University of Illinois at Chicago, Chicago, Illinois, 2019. \\  
             &\\
-            &M.Eng., Computer Engineering, University of Illinois at Chicago, Chicago, Illinois, 20xx.\\
+            &B.Sc., Civil Engineering, Purdue University, West Lafayette, Indiana, 2008.  \\
             &\\
-            &B.Eng., Computer Engineering, University of Illinois at Chicago, Chicago, Illinois, 20xx.  \\
-            &\\
-ACADEMIC EXPERIENCE:  &Research Assistant, Computational Population Biology Lab, Department of Computer Science, University of Illinois at Chicago, xxxx - 2018. \\
+ACADEMIC EXPERIENCE:  &Research Assistant, BITS Networked Systems Lab, Department of Computer Science, University of Illinois at Chicago, 2019. \\
             &\\
             &Teaching Assistant, Department of Computer Science, University of Illinois at Chicago: \\
             &\squishlist            
-            \item Computer Algorithm I, Spring xxxx and  Fall xxxx.    
-            \item Secure Computer Systems, Fall xxxx 
+            \item Systems Programming, Spring 2019.    
+            \item Program Design II, Spring 2018.
             \squishend \\
             
 
