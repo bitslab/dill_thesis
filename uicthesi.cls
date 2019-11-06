@@ -337,9 +337,9 @@
 \def\vita{
     
    \typeout{VITA.}
-   %\addtocontents{toc}{\protect\addvspace{\baselineskip}}
-   %\addcontentsline{toc}{chapter}
-      %{\protect\xnumberline{\ }VITA}
+   \addtocontents{toc}{\protect\addvspace{\baselineskip}}
+   \addcontentsline{toc}{chapter}
+      {\protect\xnumberline{\ }VITA}
    \def\section@mark{VITA}
    \@makeschapterhead{\section@mark}\par}
 %    \end{macrocode}

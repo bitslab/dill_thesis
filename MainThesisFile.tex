@@ -443,8 +443,6 @@ Interestingly, asynchronous dedicated delegation outperforms all approaches on t
 
 Further, the portion of L3 cache available to the server is roughly $1 / N_{servers on processor}$ of the L3 on the processor, or 2,464 KB. This translates to 39,000 additional variables per server, or 630,000 more variables for the system. L3 is exhausted when the number of shared variables approaches 2\textsuperscript{20}. Performance continues to degrade as the number of variables resident in DRAM increases and the likelihood of cache hits decreases. 
 
-%For quantities of shared variables smaller than the size of a single processors cache contention should be evident in L3 cache hits. More L3 cache hits indicate more contention because uncontended variables should remain in a processors exclusive L1 or L2 cache. ~\ref{fig:contention} shows delegation approaches with fewer L3 cache hits per operation compared to the atomic fetch and add and the fine grained mutex lock. 
-
 \subsection{Memory Subsystem}
 
 \begin{figure}[ht!]
@@ -485,135 +483,21 @@ Opportunities for continuing work remain. The performance of asynchronous delega
 Flat delegation shows promise to equal or outperform synchronization approaches throughout the range of shared variables. More research is necessary on the strategy for invoking the server function on a flat delegation thread with the goal of finding an equilibrium between client and server functions that maximizes overall throughput. 
 
 
-%\chapter{Some other stuff I wrote but probably shouldn't be included}
-%\section{Hardware}
-%Under consideration is our highly parallel machine consisting of multiple processing units, or cores, sharing resources on a single silicon processor. Cores execute threads, or sequences of machine instructions. X86 machines often support the simultaneous execution of two threads at the same time. In this hyperthreaded scenario a core's resources are shared between the threads in execution. 
-%
-%Processors are installed in sockets on the machine's motherboard. The processors on separate sockets communicate with each other through a bus. On a machine supporting Non Uniform Memory Access (NUMA) each socket is also a NUMA Node, with direct access to a portion of main memory (DRAM). Cores on a socket will experience greater latency accessing memory addresses on a remote NUMA node than memory addresses resident on their local NUMA node because of the time required for the data to travel across the bus. 
-%
-%Access to main memory is a bottleneck for modern processors, which can perform an operation in as little as 1 cycle but write to memory in the order of LOOK THIS UP. To close this latency gap processors and cores have levels of cache, small amounts of high speed memory located closer to the processing unit. Cache is typically allocated in three levels, with levels 1 and 2 dedicated to a single core, while level 3 is shared among all cores on a processor. The latency of access to levels 1, 2, and 3 is around 5, 15, 60 cycles respectively. 
-%
-%The cache optimization works by making a working copy of the data at a memory address and moving it into the lower latency memory closer to the core. The core can manipulate this memory locally and write it out to main memory when it is complete. When access to a memory address is predictable or frequent, data at memory addresses can be moved ahead of time, or prefetched, to the cache, and the core can benefit from the lower latency of the cache memory.   
-%
-%Although memory is byte addressed, the cache system manages information in 64 byte segments called cache lines. Caches are typically n-way set associative. A set can hold up to n cache lines which share a common portion of their memory address. 
-%
-%For example, a 32kB 8-way set associative cache has 512 cache lines split into 64 sets. Each set accepts memory addresses with bits 6-11 of the memory address in common. 
-%
-%When a cache is full, the least recently used cache line is evicted to a lower level cache or main memory in favor of a newer cache line. 
-%
-%When multiple cores access memory in the same cache line the copies resident in each core's cache may become inconsistent. Cores can snoop on another core's cache line status. If a core detects that a cache line has been modified on another core, the snooping core signals the modifying core which then forwards the modified cache line, causing an increase in access time\cite{IntelDevelopersManual}. In a concurrent program multiple cores may be writing to separate addresses resident in the same cache line. The cache line is shared between cores although the memory addresses are not. This false sharing of the memory addresses increases access latency for all cores operating on the cache line. 
-%
-%\section{Schemes for Shared Memory Access}
-%Of course concurrent programs not only false share cache lines, they perform operations on the same memory addresses as well. Without careful synchronization by the programmer multiple cores can read and modify a memory address concurrently producing a non-deterministic result. Some of the methods for preventing this data race are described below. 
-%% Locking
-%Mutual Exclusion (Mutex) locks synchronize memory access through a variable that a thread must claim before moving forward with its data altering, or critical, section. When a competing thread views the lock as occupied it will wait to execute its critical section until it gets exclusive control of the lock. 
-%
-%There are several ways of implementing the MUTEX lock. // expand upon this.  
-%
-%Regardless of the implementation, synchronization schemes using locks suffer bottlenecks due to sharing the lock variable across multiple processors or sockets. In fine grained locking schemes these lock variables may take up a significant portion of memory (validate this). Additionally, memory modified in the critical section may reside in another cache, local DRAM, or another NUMA node's DRAM. 
-%% Atomic Operations
-%Atomic operations are those operations where 
-%% Transactional Memory
-%
-%
-%
-%\chapter{Rates and System Performance}
-%% Quantifying the client - server relationship
-%% 
-
-
-
-%This is how we cite a paper \cite{Farine20162243}.
-%
-%Below is the example of algorithm block.
-%
-%
-%\IncMargin{1em}
-%\begin{alprocedure}[!htp]
-%\caption{FindFactionsAndInitiators}
-%\SetKwInOut{Input}{input}\SetKwInOut{Output}{output}
-%\Input{An adjacency matrix $E^*$ of dynamic network}
-%\Output{ A time series of faction sets $\mathcal{F}^*$, and a time series of initiator sets $\mathcal{L}^*$ }
-%\BlankLine
-%\For{$i\leftarrow 1$ \KwTo $t^*$}{
-%\textcolor{cyan}{\tcc*[h]{Get a matrix at time $t=i$} }
-%
-%$E \leftarrow E^*_{ t = i}$ \; 
-%\textcolor{cyan}{\tcc*[h]{FindInitiators($E $) returns all nodes which have zero outgoing degree}}
-%
-%$\mathcal{L} \leftarrow$FindInitiators($E $) \;
-%$\mathcal{F} = \emptyset$ \;
-%\For{$l \in \mathcal{L}$}{
-%\textcolor{cyan}{\tcc*[h]{FindReachNodeFrom($E,l$) returns all nodes which have any directed path to $l$}}
-%
-%$F_l\leftarrow$FindReachNodeFrom($E,l$) \;
-%$\mathcal{F} = \mathcal{F} \cup \{F_l\}$
-%}
-%$\mathcal{F}^*_{t=i} = \mathcal{F}  $ and $\mathcal{L}^*_{t=i} = \mathcal{L}  $
-%}
-%\label{algo:FindFactionsAndInitiators}
-%\end{alprocedure}\DecMargin{1em}
-%
-%
-%The example of table is below.
-%
-%\begin{table}[!htp]
-%\tiny
-%\centering
-%\caption{Table Caption1}
-%\label{table:htestdes}
-%\begin{tabular}{l|l|l|}
-%\cline{2-3}
-%                                                                                                                     & \cellcolor[HTML]{EFEFEF}\textbf{Method}                                    & \cellcolor[HTML]{EFEFEF}\textbf{Null hypothesis $H_0$}                                                                                          \\ \hline
-%\multicolumn{1}{|l|}{}                                                                                               & $t$-test                                                                      & \begin{tabular}[c]{@{}l@{}}A sample has a normal distribution \\ with zero mean and unknown variance.\end{tabular}                              \\ \cline{2-3} 
-%\multicolumn{1}{|l|}{}                                                                                               & \cellcolor[HTML]{EFEFEF}Sign test                                          & \cellcolor[HTML]{EFEFEF}A sample has a distribution with zero median.                                                                           \\ \cline{2-3} 
-%\multicolumn{1}{|l|}{\multirow{-3}{*}{\textbf{\begin{tabular}[c]{@{}l@{}}Zero \\ mean/median \\ test\end{tabular}}}} & Wilcoxon signed rank test                                                  & A sample has a symmetric distribution around zero median.                                                                                       \\ \hline
-%\multicolumn{1}{|l|}{}                                                                                               & \cellcolor[HTML]{EFEFEF}Kolmogorov-Smirnov test (KS test)                           & \cellcolor[HTML]{EFEFEF}A sample comes from a normal distribution.                                                                              \\ \cline{2-3} 
-%\multicolumn{1}{|l|}{}                                                                                               & \begin{tabular}[c]{@{}l@{}}Chi-square \\ goodness-of-fit test\end{tabular} & \begin{tabular}[c]{@{}l@{}}A sample comes from a normal distribution \\ with a mean and variance estimated from a sample itself.\end{tabular}   \\ \cline{2-3} 
-%\multicolumn{1}{|l|}{}                                                                                               & \cellcolor[HTML]{EFEFEF}Jarque-Bera test                                   & \cellcolor[HTML]{EFEFEF}\begin{tabular}[c]{@{}l@{}}A sample comes from a normal distribution \\ with an unknown mean and variance.\end{tabular} \\ \cline{2-3} 
-%\multicolumn{1}{|l|}{\multirow{-4}{*}{\textbf{\begin{tabular}[c]{@{}l@{}}Normality \\ test\end{tabular}}}}           & Anderson-Darling test                                                      & A sample comes from a normal distribution.                                                                                                      \\ \hline
-%\end{tabular}
-%\end{table}
-%
-%
-%
-%\section{Support of leading faction}
-%
-%\begin{figure}[ht!]
-%\centering
-%\includegraphics[width=0.9\columnwidth]{FIG/CoorEventSup}
-%\caption{An example of image in thesis }
-%\label{fig:CoorEventSup}
-%\end{figure}
-%
-%
-% \appendices
-% \newpage
-% \appendix
-%
-% \chapter{Some Ancillary Stuff}
-%
-% Ancillary material should be put in appendices.
-%
-% \chapter{Some More Ancillary Stuff}
-%
-% Here is yet another appendix! Wahoo!
-
-%\nocite{*}
 \bibformb
 \bibliography{BibFile}
 \newpage
-% \vita
+
+\vita
 % This is where the vita goes.  Its organization is left as an exercise.
-\clearpage
+%\clearpage
     \pagestyle{pageontop}
    \thispagestyle{pageonbottom}
    %\vspace*{3in}
-   \begin{large}
-   \begin{center}
-   {\bfseries VITA}
-   \end{center}
-   \end{large}
+ %  \begin{large}
+  % \begin{center}
+   %{\bfseries VITA}
+%   \end{center}
+%   \end{large}
 \begin{tabular}{p{2.8cm}p{10.5cm}}
 NAME: & George Dill  \\ 
     &\\
